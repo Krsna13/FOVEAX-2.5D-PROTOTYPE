@@ -1,0 +1,10 @@
+# Virtual environment
+.venv/
+__pycache__/
+*.pyc
+
+# Raw data
+data/
+
+# Point cloud outputs (excludes heavy .ply files, keeps screenshots)
+outputs/*.ply
