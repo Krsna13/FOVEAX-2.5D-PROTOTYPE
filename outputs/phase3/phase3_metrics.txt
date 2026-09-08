@@ -1,0 +1,47 @@
+FOVEAX Phase 3 — Terrain Analysis Metrics
+================================================
+
+Grid: 14875 cells (85 x 175)
+Resolution: 0.020 m/cell
+Occupied cells: 5,763 (38.74%)
+
+--- Slope (degrees) ---
+  Mean: 70.229
+  Median: 81.085
+  Min / Max: 0.000 / 88.175
+  P10 / P90: 23.300 / 86.992
+  Max safe threshold: 15.0 deg
+
+--- Roughness (m, local std dev) ---
+  Mean: 0.0784
+  Median: 0.0161
+  Min / Max: 0.0022 / 0.5225
+  P10 / P90: 0.0064 / 0.2487
+  Max safe threshold: 0.050 m
+
+--- Step Height (m, max neighbour diff) ---
+  Mean: 0.1212
+  Median: 0.0132
+  Min / Max: 0.0001 / 1.1468
+  P10 / P90: 0.0063 / 0.4428
+  Max safe threshold: 0.150 m
+
+--- Traversability Score ---
+  Mean: 0.3452
+  Median: 0.4685
+  Min / Max: 0.0000 / 0.9682
+  P10 / P90: 0.0000 / 0.5501
+
+--- Class Breakdown ---
+  Safe (0):         99 ( 1.72%)  #2ecc71
+  Caution (1):    3069 (53.25%)  #f1c40f
+  Blocked (2):    2591 (44.96%)  #e74c3c
+  Unknown (3):    9116 (61.28% of grid)  #6c757d
+
+--- Weights ---
+  Slope:      0.40
+  Roughness:  0.30
+  Step:       0.30
+
+Note: These thresholds and weights are prototype defaults.
+Tune them for the target vehicle before field use.

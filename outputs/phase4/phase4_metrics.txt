@@ -1,0 +1,31 @@
+FOVEAX Phase 4 — Adaptive Variable-Resolution 2.5D Mapping
+
+Zone metrics:
+
+Zone: Near
+Distance range: 0.00–0.50 m
+Resolution: 0.020 m
+Grid shape: 300 rows × 300 cols
+Points in zone: 0
+Occupied cells: 0 / 90,000
+Grid occupancy: 0.00%
+
+Zone: Middle
+Distance range: 0.50–1.20 m
+Resolution: 0.050 m
+Grid shape: 120 rows × 120 cols
+Points in zone: 84
+Occupied cells: 18 / 14,400
+Grid occupancy: 0.12%
+
+Zone: Far
+Distance range: 1.20–3.00 m
+Resolution: 0.100 m
+Grid shape: 60 rows × 60 cols
+Points in zone: 5,993
+Occupied cells: 258 / 3,600
+Grid occupancy: 7.17%
+
+Total occupied cells: 276
+Total allocated cells across zones: 108,000
+Overall occupancy: 0.26%

@@ -1,0 +1,21 @@
+FOVEAX Phase 5 — Spatial Importance & ROI Manager
+
+Importance formula:
+0.25 × distance priority
++ 0.50 × terrain risk
++ 0.25 × observation uncertainty
+
+Grid size: 85 rows × 175 cols
+Occupied cells: 5763
+Background cells: 119
+Important cells: 4316
+Critical cells: 1328
+Unknown cells: 9112
+Mean importance: 0.602
+Maximum importance: 0.909
+
+Demo resolution policy:
+Critical = 2 cm
+Important = 5 cm
+Background = 10 cm
+Unknown = 5 cm + caution
