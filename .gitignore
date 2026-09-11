@@ -2,9 +2,26 @@
 .venv/
 __pycache__/
 *.pyc
+# Virtual environment
+.venv/
+__pycache__/
+*.pyc
 
 # Raw data
 data/
 
 # Point cloud outputs (excludes heavy .ply files, keeps screenshots)
 outputs/*.ply
+external/OpenPCDet/
+models/openpcdet/
+
+# Cloned third-party repos and model checkpoints (large, never committed).
+# Broader than the two specific lines above, which predate SalsaNext/other
+# external deps and only covered OpenPCDet by name.
+external/
+models/
+
+# Analysis and tool directories
+graphify-out/
+src/graphify-out/
+.claude/
