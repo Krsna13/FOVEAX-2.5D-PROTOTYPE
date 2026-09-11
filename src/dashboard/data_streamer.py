@@ -7,6 +7,9 @@ try:
 except ImportError:
     HAS_PYNVML = False
 
+import os
+from pathlib import Path
+
 from PyQt5.QtCore import QThread, pyqtSignal
 
 from src.dashboard.dashboard_state import FrameState, HardwareMetrics, assert_coordinate_frame_consistency
@@ -17,15 +20,32 @@ _trk = importlib.import_module('src.11_object_detection_tracking')
 generate_synthetic_sample_cloud = _trk.generate_synthetic_sample_cloud
 repeated_cloud_with_translation = _trk.repeated_cloud_with_translation
 
+try:
+    from src.perception.rellis3d_loader import load_rellis3d_frame
+    HAS_RELLIS_LOADER = True
+except ImportError:
+    HAS_RELLIS_LOADER = False
+
 class DataStreamerThread(QThread):
     state_ready = pyqtSignal(FrameState)
     
-    def __init__(self, source: str = "sample", detector: ObjectDetector = None, num_frames: int = 100):
+    def __init__(
+        self,
+        source: str = "sample",
+        detector: ObjectDetector = None,
+        num_frames: int = 100,
+        sequence: str = "00",
+        data_root: str | Path | None = None,
+        rate_hz: float = 10.0,
+    ):
         super().__init__()
-        self.source = source
+        self.source = source.lower()
         self.detector = detector if detector else MockObjectDetector()
         self.tracker = MultiObjectTracker()
         self.num_frames = num_frames
+        self.sequence = sequence
+        self.data_root = Path(data_root) if data_root else None
+        self.rate_hz = rate_hz
         self.running = True
         
         # Grid parameters for 2D maps
@@ -37,13 +57,9 @@ class DataStreamerThread(QThread):
         global HAS_PYNVML
         
         if HAS_PYNVML:
-        
             try:
-        
                 pynvml.nvmlInit()
-        
             except pynvml.NVMLError:
-        
                 HAS_PYNVML = False
 
     def _generate_maps(self, points: np.ndarray, tracks: list) -> dict:
@@ -140,83 +156,138 @@ class DataStreamerThread(QThread):
                 
         return hm
 
+    def _setup_sources(self):
+        """Prepare file list or synthetic generators based on self.source."""
+        self._sample_static_pts = None
+        self._sample_moving_pts = None
+        self._sample_translation_step = np.array([0.5, 0.0, 0.0], dtype=np.float64)
+        self._file_list = []
+
+        if self.source == "sample":
+            self._sample_static_pts, self._sample_moving_pts = generate_synthetic_sample_cloud(
+                n_static=2000, n_moving=150
+            )
+        elif self.source == "semantickitti":
+            kitti_root = self.data_root or Path("data/semantic_kitti/dataset/sequences")
+            seq_dir = kitti_root / self.sequence / "velodyne"
+            if seq_dir.exists():
+                self._file_list = sorted(list(seq_dir.glob("*.bin")))
+            if not self._file_list:
+                print(f"[WARNING] No SemanticKITTI .bin files found in {seq_dir}. Falling back to sample generator.")
+                self.source = "sample"
+                self._sample_static_pts, self._sample_moving_pts = generate_synthetic_sample_cloud(
+                    n_static=2000, n_moving=150
+                )
+        elif self.source == "rellis3d":
+            rellis_root = self.data_root or Path("C:/dev/data/rellis3d")
+            if not rellis_root.exists():
+                rellis_root = Path("data/rellis3d")
+            seq_dir = rellis_root / "Rellis-3D" / self.sequence / "os1_cloud_node_kitti_bin"
+            if seq_dir.exists():
+                self._file_list = sorted(list(seq_dir.glob("*.bin")))
+            if not self._file_list:
+                print(f"[WARNING] No RELLIS-3D .bin files found in {seq_dir}. Falling back to sample generator.")
+                self.source = "sample"
+                self._sample_static_pts, self._sample_moving_pts = generate_synthetic_sample_cloud(
+                    n_static=2000, n_moving=150
+                )
+
+    def _get_frame_points(self, frame_idx: int) -> np.ndarray:
+        """Fetch points for frame_idx from active source."""
+        if self.source == "sample":
+            offset = self._sample_translation_step * frame_idx
+            frame_moving = repeated_cloud_with_translation(self._sample_moving_pts, offset)
+            return np.concatenate([self._sample_static_pts, frame_moving], axis=0)
+
+        if not self._file_list:
+            return np.zeros((0, 4), dtype=np.float32)
+
+        file_path = self._file_list[frame_idx % len(self._file_list)]
+
+        if self.source == "rellis3d" and HAS_RELLIS_LOADER:
+            rellis_root = self.data_root or Path("C:/dev/data/rellis3d")
+            if not rellis_root.exists():
+                rellis_root = Path("data/rellis3d")
+            try:
+                frame_id = file_path.stem
+                rf = load_rellis3d_frame(rellis_root, self.sequence, frame_id)
+                return rf.points
+            except Exception:
+                # Fallback to direct raw bin loading if labels missing
+                raw = np.fromfile(file_path, dtype=np.float32)
+                return raw.reshape(-1, 4)
+
+        # Standard SemanticKITTI or raw binary
+        raw = np.fromfile(file_path, dtype=np.float32)
+        if raw.size % 4 != 0:
+            return np.zeros((0, 4), dtype=np.float32)
+        return raw.reshape(-1, 4)
+
+    def process_frame(self, frame_idx: int, timestamp_s: float, fps: float = 10.0) -> FrameState:
+        """Process a single frame through detection, tracking, grid mapping, and metrics."""
+        t_start = time.perf_counter()
+        points = self._get_frame_points(frame_idx)
+
+        # Coordinate frame sanity check
+        if getattr(self.detector, "_SOURCE", "") != "mock_geometric_clusterer" and len(points) > 0:
+            x_max_cloud = np.max(points[:, 0])
+            if x_max_cloud < 0 or x_max_cloud > 100:
+                print(f"[WARNING] Point cloud X range out of expected KITTI coordinate bounds (x_max={x_max_cloud:.1f}).")
+
+        # Detect & Track
+        detections = self.detector.detect(points, timestamp_s=timestamp_s)
+        tracks = self.tracker.update(detections, timestamp_s=timestamp_s)
+
+        track_velocities = {
+            t.track_id: (float(t.state[3]), float(t.state[4]))
+            for t in tracks
+        }
+
+        # Grids
+        grids = self._generate_maps(points, tracks)
+
+        t_end = time.perf_counter()
+        latency = t_end - t_start
+        target_fps = self.rate_hz
+
+        metrics = self._get_hardware_metrics(fps, target_fps, latency)
+
+        state = FrameState(
+            frame_idx=frame_idx,
+            timestamp_s=timestamp_s,
+            points=points,
+            tracks=tracks,
+            track_velocities=track_velocities,
+            grid_maps=grids,
+            grid_resolution_m=self.grid_res,
+            grid_extent_m=self.grid_extent,
+            metrics=metrics,
+        )
+        state.coordinate_warnings = assert_coordinate_frame_consistency(state)
+        for w in state.coordinate_warnings:
+            print(f"[WARNING] {w}")
+
+        self._log_session(state)
+        return state
+
     def run(self):
-        # Set up sample cloud
-        static_pts, moving_pts = generate_synthetic_sample_cloud(n_static=2000, n_moving=150)
-        translation_step = np.array([0.5, 0.0, 0.0], dtype=np.float64)
-        
+        self._setup_sources()
+        dt = 1.0 / self.rate_hz
         current_time = 0.0
-        dt = 0.1
-        
         last_t = time.perf_counter()
-        
+
         for frame_idx in range(self.num_frames):
             if not self.running:
                 break
-                
+
             t_start = time.perf_counter()
-            
-            # 1. Prepare data
-            offset = translation_step * frame_idx
-            frame_moving = repeated_cloud_with_translation(moving_pts, offset)
-            points = np.concatenate([static_pts, frame_moving], axis=0)
-            
-            # 2. Detect & Track
-            # Coordinate frame assertion for PointPillars (Task O)
-            if self.detector._SOURCE != "mock_geometric_clusterer":
-                # Typical KITTI range: x in [0, 70.4], y in [-40, 40], z in [-3, 1]
-                # Just print a warning if completely out of bounds
-                x_max_cloud = np.max(points[:, 0])
-                if x_max_cloud < 0 or x_max_cloud > 100:
-                    print(f"[WARNING] Point cloud X range out of expected KITTI coordinate bounds (x_max={x_max_cloud:.1f}). Ensure coordinate transformation is applied.")
+            fps = 1.0 / (t_start - last_t) if (t_start - last_t) > 0 else self.rate_hz
+            last_t = t_start
 
-            detections = self.detector.detect(points, timestamp_s=current_time)
-            tracks = self.tracker.update(detections, timestamp_s=current_time)
-            
-            # Populate track velocities
-            track_velocities = {}
-            for t in tracks:
-                track_velocities[t.track_id] = (float(t.state[3]), float(t.state[4]))
-            
-            # 3. Grids
-            grids = self._generate_maps(points, tracks)
-
-            t_end = time.perf_counter()
-            latency = t_end - t_start
-            fps = 1.0 / (t_end - last_t) if (t_end - last_t) > 0 else 0.0
-            target_fps = 1.0 / dt
-            last_t = t_end
-            
-            # 4. Metrics
-            metrics = self._get_hardware_metrics(fps, target_fps, latency)
-            
-            # 5. Emit
-            state = FrameState(
-                frame_idx=frame_idx,
-                timestamp_s=current_time,
-                points=points,
-                tracks=tracks,
-                track_velocities=track_velocities,
-                grid_maps=grids,
-                grid_resolution_m=self.grid_res,
-                grid_extent_m=self.grid_extent,
-                metrics=metrics
-            )
-
-            # Cross-panel origin-consistency check (Task O). Non-blocking: logs
-            # and surfaces warnings on the frame instead of crashing the thread.
-            state.coordinate_warnings = assert_coordinate_frame_consistency(state)
-            for w in state.coordinate_warnings:
-                print(f"[WARNING] {w}")
-
+            state = self.process_frame(frame_idx, current_time, fps)
             self.state_ready.emit(state)
-            
-            # 6. Log session data (Task Q)
-            self._log_session(state)
-            
+
             current_time += dt
-            
-            # Sleep to maintain roughly ~10Hz
             elapsed = time.perf_counter() - t_start
             sleep_t = max(0, dt - elapsed)
             time.sleep(sleep_t)

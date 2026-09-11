@@ -27,9 +27,30 @@ from src.perception.object_detector import MockObjectDetector
 
 def parse_args():
     parser = argparse.ArgumentParser(description="FOVEAX Phase 9 - Real-Time Dashboard")
-    parser.add_argument("--source", type=str, choices=["sample", "semantickitti"], default="sample", help="Data source")
-    parser.add_argument("--detector", type=str, choices=["mock", "pointpillars"], default="mock", help="Detector type")
-    # For pointpillars we would need more args, but sticking to basics for now as mock is default
+    parser.add_argument(
+        "--source", type=str, choices=["sample", "semantickitti", "rellis3d"],
+        default="sample", help="Data source ('sample', 'semantickitti', 'rellis3d')"
+    )
+    parser.add_argument(
+        "--detector", type=str, choices=["mock", "pointpillars"],
+        default="mock", help="Detector type"
+    )
+    parser.add_argument(
+        "--sequence", type=str, default=None,
+        help="Sequence name (e.g. '00' for KITTI, '00000' for RELLIS-3D)"
+    )
+    parser.add_argument(
+        "--frames", type=int, default=100,
+        help="Number of frames to process"
+    )
+    parser.add_argument(
+        "--rate-hz", type=float, default=10.0,
+        help="Target streaming rate in Hz"
+    )
+    parser.add_argument(
+        "--headless", action="store_true",
+        help="Run streamer in headless mode without GUI/Open3D display (writes telemetry to outputs/phase9/session/)"
+    )
     return parser.parse_args()
 
 from multiprocessing import Process, Queue
@@ -55,8 +76,19 @@ class DashboardApplication:
             detector = MockObjectDetector()
             print("[WARNING] PointPillars requested but not fully implemented in CLI args, using mock.")
             
+        # Sequence default
+        seq = args.sequence
+        if seq is None:
+            seq = "00000" if args.source == "rellis3d" else "00"
+
         # Initialize Streamer
-        self.streamer = DataStreamerThread(source=args.source, detector=detector)
+        self.streamer = DataStreamerThread(
+            source=args.source,
+            detector=detector,
+            num_frames=args.frames,
+            sequence=seq,
+            rate_hz=args.rate_hz,
+        )
         self.streamer.state_ready.connect(self.on_state_ready)
         
         # Frame desync management
@@ -96,10 +128,61 @@ class DashboardApplication:
             
         sys.exit(exit_code)
 
+def run_headless(args):
+    """Run data streamer without PyQt5 GUI or Open3D windows."""
+    print("=" * 60)
+    print("FOVEAX Phase 9 - Headless Session Replay & Telemetry")
+    print("=" * 60)
+    print(f"Source:     {args.source}")
+    seq = args.sequence or ("00000" if args.source == "rellis3d" else "00")
+    print(f"Sequence:   {seq}")
+    print(f"Frames:     {args.frames}")
+    print(f"Rate:       {args.rate_hz} Hz")
+    print("-" * 60)
+
+    detector = MockObjectDetector()
+    streamer = DataStreamerThread(
+        source=args.source,
+        detector=detector,
+        num_frames=args.frames,
+        sequence=seq,
+        rate_hz=args.rate_hz,
+    )
+    streamer._setup_sources()
+
+    dt = 1.0 / args.rate_hz
+    start_time = time.time()
+
+    for idx in range(args.frames):
+        ts = idx * dt
+        t0 = time.perf_counter()
+        state = streamer.process_frame(idx, ts, fps=args.rate_hz)
+        latency = (time.perf_counter() - t0) * 1000.0
+
+        if (idx + 1) % 5 == 0 or idx == 0 or idx == args.frames - 1:
+            print(
+                f"[Frame {state.frame_idx + 1:3d}/{args.frames}] "
+                f"Points: {len(state.points):6,d} | "
+                f"Tracks: {len(state.tracks):2d} | "
+                f"Latency: {latency:5.1f}ms | "
+                f"CPU: {state.metrics.cpu_percent:4.1f}%"
+            )
+
+    total_time = time.time() - start_time
+    print("-" * 60)
+    print(f"Headless replay completed in {total_time:.2f}s ({args.frames / max(total_time, 1e-3):.1f} FPS)")
+    print("Session telemetry saved to outputs/phase9/session/dashboard_session.jsonl")
+    print("=" * 60)
+
+
 def main():
     args = parse_args()
-    app = DashboardApplication(args)
-    app.run()
+    if args.headless:
+        run_headless(args)
+    else:
+        app = DashboardApplication(args)
+        app.run()
+
 
 if __name__ == "__main__":
     main()
