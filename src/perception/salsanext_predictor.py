@@ -152,6 +152,12 @@ class SalsaNextPredictor(SemanticPredictor):
         if modules_str not in sys.path:
             sys.path.insert(0, modules_str)
 
+        # Python 3.12+ removed the deprecated 'imp' module from stdlib.
+        # SalsaNext.py has an unused 'import imp' line; shim it to importlib.
+        if "imp" not in sys.modules:
+            import importlib
+            sys.modules["imp"] = importlib
+
         try:
             # We must load the architecture configuration first
             with open(self.config_path, "r") as f:
