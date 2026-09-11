@@ -1,0 +1,3 @@
+Build failed: TensorRT Python API missing.
+Manual command:
+trtexec --onnx=fake.onnx --saveEngine=fake.engine --workspace=2048 --fp16

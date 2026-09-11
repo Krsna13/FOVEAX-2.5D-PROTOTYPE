@@ -1,0 +1,2 @@
+{"timestamp": 1789009256.792656, "latency_ms": 0.001500000053056283, "semantic_source": "tensorrt", "detection_source": "tensorrt", "precision": "fp16", "free_vram_mb": 7896.8515625}
+{"timestamp": 1789009733.5687094, "latency_ms": 0.0014000002011016477, "semantic_source": "tensorrt", "detection_source": "tensorrt", "precision": "fp16", "free_vram_mb": 7896.8515625}
