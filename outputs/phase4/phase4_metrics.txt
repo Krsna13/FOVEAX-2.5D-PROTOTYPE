@@ -1,31 +1,48 @@
 FOVEAX Phase 4 — Adaptive Variable-Resolution 2.5D Mapping
 
-Zone metrics:
+Zone metrics (Evaluated Cloud):
 
 Zone: Near
-Distance range: 0.00–0.50 m
-Resolution: 0.020 m
-Grid shape: 300 rows × 300 cols
-Points in zone: 0
-Occupied cells: 0 / 90,000
-Grid occupancy: 0.00%
+Distance range: 0.00–15.00 m
+Resolution: 0.050 m
+Grid shape: 4000 rows × 4000 cols
+Points in zone: 90,657
+Occupied cells: 39,345 / 16,000,000
+Grid occupancy: 0.25%
 
 Zone: Middle
-Distance range: 0.50–1.20 m
-Resolution: 0.050 m
-Grid shape: 120 rows × 120 cols
-Points in zone: 84
-Occupied cells: 18 / 14,400
-Grid occupancy: 0.12%
+Distance range: 15.00–35.00 m
+Resolution: 0.200 m
+Grid shape: 1000 rows × 1000 cols
+Points in zone: 26,955
+Occupied cells: 7,772 / 1,000,000
+Grid occupancy: 0.78%
 
 Zone: Far
-Distance range: 1.20–3.00 m
-Resolution: 0.100 m
-Grid shape: 60 rows × 60 cols
-Points in zone: 5,993
-Occupied cells: 258 / 3,600
-Grid occupancy: 7.17%
+Distance range: 35.00–100.00 m
+Resolution: 0.500 m
+Grid shape: 400 rows × 400 cols
+Points in zone: 7,056
+Occupied cells: 2,029 / 160,000
+Grid occupancy: 1.27%
 
-Total occupied cells: 276
-Total allocated cells across zones: 108,000
-Overall occupancy: 0.26%
+Total occupied cells: 49,146
+Total allocated cells across zones: 17,160,000
+Overall occupancy: 0.29%
+
+============================================================
+Problem Statement Specification (100m Range Memory Reduction)
+============================================================
+Perception Volume: 200m x 200m x 8m (Range: 100m)
+Foveated Resolution Zones:
+  - Near   ( 0 - 15m):  5 cm resolution (0.05m)
+  - Middle (15 - 35m): 20 cm resolution (0.20m)
+  - Far    (35 - 100m): 50 cm resolution (0.50m)
+
+Equivalent Uniform 3D Voxel Grid (at 5cm): 2,560,000,000 voxels (2441.4 MB at 1B/voxel)
+Equivalent Uniform 2.5D Grid (at 5cm)     : 16,000,000 cells (244.1 MB at 16B/cell)
+FOVEAX Adaptive 2.5D Foveated Grid        : 471,554 cells (7.2 MB at 16B/cell)
+
+Theoretical Cell Count Reduction vs Uniform 3D Voxels : 99.9816%
+Theoretical Memory Byte Savings vs Uniform 3D Voxels  : 99.71%
+Theoretical Cell Count Reduction vs Uniform 2.5D Grid : 97.05%
