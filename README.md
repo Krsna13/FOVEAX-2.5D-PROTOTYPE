@@ -184,8 +184,19 @@ python src/10_ai_semantic_2point5d_map.py --source salsanext \
     --config models/salsanext/pretrained/pretrained/arch_cfg.yaml \
     --device auto
 
-# Evaluate distance-bucketed accuracy across Near (0-15m), Mid (15-35m), Far (35-100m) zones
-python src/perception/distance_accuracy_eval.py --device cuda
+# Evaluate distance-bucketed accuracy + confusion matrix across Near (0-15m), Mid (15-35m), Far (35-100m) zones
+python src/10b_eval_distance_metrics.py --dataset-type semantickitti --sequence 00 --frame 000000 \
+    --salsanext-repo external/SalsaNext \
+    --checkpoint models/salsanext/pretrained/pretrained/SalsaNext \
+    --config models/salsanext/pretrained/pretrained/arch_cfg.yaml \
+    --device auto
+
+# Same, on RELLIS-3D with sensor-domain adaptation (Ouster OS1-64 FOV + intensity rescale)
+python src/10b_eval_distance_metrics.py --dataset-type rellis3d --sequence 00000 --frame 000000 \
+    --salsanext-repo external/SalsaNext \
+    --checkpoint models/salsanext/pretrained/pretrained/SalsaNext \
+    --config models/salsanext/pretrained/pretrained/arch_cfg.yaml \
+    --device auto
 
 # Run Phase 8: 3D Object Detection & Tracking (Synthetic Sample)
 python src/11_object_detection_tracking.py --source sample --detector mock --frames 10

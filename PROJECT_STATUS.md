@@ -278,14 +278,26 @@ scaffolding exists, core logic is a documented stub), **❌ Not Started**.
   `tests/test_profiler.py`, `tests/test_tensorrt_builder_config.py`, `tests/test_vram_budget.py`.
 
 ### Phase 12 — Validation and Distance-Bucketed Benchmarking — ✅ Complete
-- **Deliverables:** `src/perception/distance_accuracy_eval.py` — computes whole-scan and distance-bucketed
-  accuracy metrics matching FOVEAX's foveated zones: Near (0–15m), Middle (15–35m), Far (35–100m).
-- **Generated report on disk:** `outputs/phase7/distance_accuracy_report.txt` provides quantitative evaluation:
-  - **SemanticKITTI (Urban HDL-64E):** 93.31% overall agreement (Near: 95.98%, Mid: 92.94%, Far: 60.43%).
+- **Deliverable:** `src/10b_eval_distance_metrics.py` — computes distance-bucketed accuracy and a full
+  per-class confusion matrix matching FOVEAX's foveated zones: Near (0–15m), Mid (15–35m), Far (35–100m),
+  with ground-truth UNKNOWN(7) points (e.g. SemanticKITTI's own "unlabeled"/"outlier" raw classes)
+  excluded from scoring — matching SemanticKITTI's own official benchmark convention.
+  (An earlier duplicate, `src/perception/distance_accuracy_eval.py`, computed the same underlying metric
+  without that exclusion and carried a hardcoded "Summary & Engineering Findings" narrative that had
+  drifted out of sync with its own live output — e.g. claiming ~11.1%/~37.1% for RELLIS-3D when the
+  actual measured numbers were 6.65%/22.26%. It was deleted rather than fixed in place, since consolidating
+  to one tested, always-live-computed source of truth was more valuable than patching a second one.)
+- **Measured results** (SemanticKITTI seq 00/frame 000000, RELLIS-3D seq 00000/frame 000000):
+  - **SemanticKITTI (Urban HDL-64E):** 93.31% overall agreement, all 124,668 points (Near: 95.98% of
+    90,657 pts, Mid: 92.94% of 26,955, Far: 60.43% of 7,056). With SemanticKITTI's own UNKNOWN ground
+    truth excluded (`10b`'s convention): 94.98% overall, 122,480 points (Far rises to 86.58% of 4,925 —
+    30.2% of the Far zone's raw ground truth is UNKNOWN/unlabeled, which drags the unfiltered number down
+    without reflecting a real prediction error).
   - **RELLIS-3D Unadapted Baseline:** 6.65% agreement (Near: 4.99%, Mid: 18.38%), suffering severe vehicle hallucination.
   - **RELLIS-3D Sensor-Adapted (+17.02°/-16.44° FOV + intensity rescale):** 22.26% overall agreement (Near: 18.71%, Mid: 47.72%),
     eliminating projection collapse and recovering trail rough terrain / vegetation geometry.
-- **Unit test coverage:** `tests/test_distance_accuracy_eval.py` (100% pass).
+- **Unit test coverage:** `tests/test_eval_distance_metrics.py` (7 tests: bucket accuracy, UNKNOWN
+  exclusion, mask restriction, empty-bucket handling, confusion-matrix contents — all pass).
 
 ### Phase 13 — Documentation, Packaging and Presentation Preparation — ✅ Complete
 - `README.md` and `PROJECT_STATUS.md` fully updated with complete CLI commands, architecture rationale,

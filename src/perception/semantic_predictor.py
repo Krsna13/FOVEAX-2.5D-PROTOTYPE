@@ -46,6 +46,7 @@ class SemanticPrediction:
     confidence: np.ndarray
     uncertainty: np.ndarray
     source: str
+    class_confidence: dict[str, float] | None = None
 
 
 def validate_prediction(prediction: SemanticPrediction, n_points: int) -> None:

@@ -51,6 +51,13 @@ def parse_args():
         "--headless", action="store_true",
         help="Run streamer in headless mode without GUI/Open3D display (writes telemetry to outputs/phase9/session/)"
     )
+    parser.add_argument(
+        "--separate-windows", action="store_true",
+        help="Force the original two-window layout (2D dashboard + a separate "
+             "floating Open3D window) even if pywin32 is available. By default, "
+             "when pywin32 is installed the Open3D view is embedded as a panel "
+             "inside the main dashboard window."
+    )
     return parser.parse_args()
 
 from multiprocessing import Process, Queue
@@ -59,16 +66,35 @@ import time
 class DashboardApplication:
     def __init__(self, args):
         self.app = QApplication(sys.argv)
-        
+
+        # --- Decide whether to attempt embedding the Open3D window ------
+        # This is a windowing/visual change only: the Open3D render loop
+        # still runs in its own process (self.o3d_process below), on its
+        # own event loop, completely separate from the Qt event loop here
+        # -- that split is unchanged and is not what this feature touches.
+        from src.dashboard.win32_embed import WIN32_AVAILABLE
+        self._attempt_embed = WIN32_AVAILABLE and not getattr(args, "separate_windows", False)
+        self._embedded = False
+        if WIN32_AVAILABLE and getattr(args, "separate_windows", False):
+            print("[INFO] --separate-windows requested; using the original two-window layout.")
+        elif not WIN32_AVAILABLE:
+            print("[INFO] pywin32 (win32gui) is not installed -- falling back to the "
+                  "original two-window layout. Install it with 'pip install pywin32' "
+                  "to combine the 3D view into the main dashboard window.")
+
         # Initialize UI Components
-        self.qt_window = FoveaXDashboardWindow()
-        
-        # Multiprocessing for Open3D Viewer
+        self.qt_window = FoveaXDashboardWindow(embed_3d=self._attempt_embed)
+
+        # Multiprocessing for Open3D Viewer (unchanged: separate process,
+        # separate render loop, communicated with only via self.o3d_queue).
         self.o3d_queue = Queue(maxsize=10)
         from src.dashboard.open3d_viewer import run_open3d_process
-        self.o3d_process = Process(target=run_open3d_process, args=(self.o3d_queue,))
+        self._ready_queue = Queue() if self._attempt_embed else None
+        self.o3d_process = Process(
+            target=run_open3d_process, args=(self.o3d_queue, self._ready_queue)
+        )
         self.o3d_process.start()
-        
+
         # Detector
         if args.detector == "mock":
             detector = MockObjectDetector()
@@ -112,20 +138,84 @@ class DashboardApplication:
             self.qt_window.update_ui(state)
             self.last_2d_render_time = current_time
         
+    def _try_reparent(self):
+        """Wait for the Open3D child process to report its window handle,
+        then reparent it into self.qt_window.embed_widget.
+
+        Called only when self._attempt_embed is True (win32gui available
+        and not opted out). Any failure here -- timeout waiting for the
+        handle, or an error during the actual reparent call -- is caught
+        and logged; the Open3D window simply remains a normal, separate,
+        free-floating top-level window in that case (the pre-existing
+        behavior), and nothing else about the app's operation changes.
+        """
+        from src.dashboard.win32_embed import reparent_as_child
+
+        # Poll rather than a single blocking get(timeout=...): this method
+        # runs after self.qt_window.show() but before self.app.exec_(), so
+        # nothing is pumping the Qt event loop yet -- a plain blocking wait
+        # here would make the just-shown window appear frozen/unresponsive
+        # for up to the full timeout. processEvents() between polls keeps
+        # it painting/responsive while we wait for the child's handle.
+        child_hwnd = None
+        deadline = time.time() + 8.0
+        while time.time() < deadline:
+            try:
+                child_hwnd = self._ready_queue.get_nowait()
+                break
+            except Exception:
+                pass
+            self.app.processEvents()
+            time.sleep(0.05)
+
+        if not child_hwnd:
+            print("[INFO] Could not locate the Open3D window handle in time -- "
+                  "showing it as a separate floating window instead (unchanged "
+                  "prior behavior).")
+            return
+
+        try:
+            print("[DEBUG] child_hwnd received:", child_hwnd)
+            embed_widget = self.qt_window.embed_widget
+            self.qt_window.winId()
+            print("[DEBUG] qt_window winId ok, isVisible=", self.qt_window.isVisible())
+            embed_widget.winId()
+            parent_hwnd = int(embed_widget.winId())
+            print("[DEBUG] parent_hwnd=", parent_hwnd, "embed size=", embed_widget.width(), embed_widget.height())
+            reparent_as_child(child_hwnd, parent_hwnd, embed_widget.width(), embed_widget.height())
+            print("[DEBUG] reparent_as_child returned OK, isVisible=", self.qt_window.isVisible())
+            embed_widget.child_hwnd = child_hwnd
+            self._embedded = True
+            print("[INFO] Open3D 3D view embedded into the main dashboard window.")
+        except Exception as e:
+            print(f"[WARNING] Reparenting the Open3D window failed ({e!r}); "
+                  "it will remain a separate floating window instead.")
+
     def run(self):
+        print("[DEBUG] before show()")
         self.qt_window.show()
-        self.streamer.start()
-        
+        print("[DEBUG] after show(), isVisible=", self.qt_window.isVisible())
+        if self._attempt_embed:
+            self._try_reparent()
+        print("[DEBUG] after reparent attempt, isVisible=", self.qt_window.isVisible(), "quitOnLastWindowClosed=", self.app.quitOnLastWindowClosed())
+        import os
+        if not os.environ.get("FOVEAX_DEBUG_SKIP_STREAMER"):
+            self.streamer.start()
+        else:
+            print("[DEBUG] SKIPPING streamer.start() for isolation test")
+        print("[DEBUG] entering exec_()")
+
         # Start event loop
         exit_code = self.app.exec_()
-        
+        print("[DEBUG] exec_() returned with code", exit_code)
+
         # Cleanup
         self.streamer.stop()
         self.o3d_queue.put("QUIT")
         self.o3d_process.join(timeout=2.0)
         if self.o3d_process.is_alive():
             self.o3d_process.terminate()
-            
+
         sys.exit(exit_code)
 
 def run_headless(args):

@@ -1,0 +1,1334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ASTRAFOVEA — Adaptive 2.5D LiDAR Perception Platform</title>
+<style>
+  :root{
+    --bg-primary:#030712;
+    --bg-secondary:#071426;
+    --panel:#091525;
+    --panel-border:#16324A;
+    --grid-line:#123047;
+    --cyan:#22D3EE;
+    --res-high:#22D3EE;
+    --res-med:#3B82F6;
+    --res-low:#64748B;
+    --drivable:#34D399;
+    --caution:#FBBF24;
+    --nondrivable:#F43F5E;
+    --unknown:#64748B;
+    --dynamic:#A855F7;
+    --static:#FB923C;
+    --critical:#F43F5E;
+    --text-primary:#EFF8FF;
+    --text-secondary:#94A3B8;
+    --text-muted:#64748B;
+    --font: 'Inter', 'IBM Plex Sans', -apple-system, system-ui, sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{
+    width:100vw; height:100vh; overflow:hidden;
+    background:var(--bg-primary);
+    color:var(--text-primary);
+    font-family:var(--font);
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:rgba(34,211,238,.25);}
+  .mono{font-variant-numeric:tabular-nums;}
+
+  /* ---------- APP GRID ---------- */
+  #app{
+    display:grid;
+    grid-template-rows: 8vh 77vh 15vh;
+    width:100vw; height:100vh;
+  }
+  .row-main{
+    display:grid;
+    grid-template-columns: 19% 58% 23%;
+    min-height:0;
+    border-top:1px solid var(--panel-border);
+    border-bottom:1px solid var(--panel-border);
+  }
+
+  /* ---------- HEADER ---------- */
+  #header{
+    display:grid;
+    grid-template-columns: 1fr 1.2fr 1fr;
+    align-items:center;
+    padding:0 22px;
+    background:linear-gradient(180deg,#081627,#050d1a);
+    position:relative;
+  }
+  #header::after{
+    content:"";
+    position:absolute; left:0; right:0; bottom:0; height:1px;
+    background:linear-gradient(90deg, transparent, var(--cyan), transparent);
+    opacity:.55;
+  }
+  .brand{display:flex; align-items:center; gap:12px;}
+  .brand-mark{
+    width:34px; height:34px; flex:none;
+    border:1px solid var(--cyan);
+    display:flex; align-items:center; justify-content:center;
+    position:relative;
+  }
+  .brand-mark::before{
+    content:"";
+    width:12px; height:12px;
+    background:var(--cyan);
+    box-shadow:0 0 10px 2px rgba(34,211,238,.7);
+    transform:rotate(45deg);
+  }
+  .brand-name{font-size:19px; font-weight:700; letter-spacing:1.5px; line-height:1.1;}
+  .brand-sub{font-size:10px; color:var(--text-secondary); letter-spacing:.6px; margin-top:2px;}
+
+  .header-center{text-align:center;}
+  .header-center .tagline{font-size:14px; font-weight:600; letter-spacing:1px; color:var(--text-primary);}
+  .header-center .ps{font-size:10.5px; color:var(--text-muted); margin-top:3px; letter-spacing:.4px;}
+
+  .header-right{display:flex; align-items:center; justify-content:flex-end; gap:22px;}
+  .status-pill{display:flex; align-items:center; gap:7px; font-size:11px; font-weight:600; letter-spacing:.5px;}
+  .dot{width:7px; height:7px; border-radius:50%; background:var(--drivable); box-shadow:0 0 8px 1px rgba(52,211,153,.8); flex:none;}
+  .dot.pulse{animation:pulseDot 2s ease-in-out infinite;}
+  @keyframes pulseDot{0%,100%{opacity:1;} 50%{opacity:.35;}}
+  .clock{font-size:12px; color:var(--text-secondary);}
+  .fps-badge{
+    font-size:12px; font-weight:700; color:var(--cyan);
+    border:1px solid var(--panel-border); padding:4px 9px;
+  }
+  .menu-icon{
+    width:30px; height:30px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+    border:1px solid var(--panel-border); cursor:pointer; background:transparent;
+  }
+  .menu-icon span{width:14px; height:1.5px; background:var(--text-secondary);}
+  .menu-icon:hover span{background:var(--cyan);}
+
+  /* ---------- PANELS GENERIC ---------- */
+  .panel{
+    background:var(--panel);
+    border-right:1px solid var(--panel-border);
+    min-height:0; overflow-y:auto; overflow-x:hidden;
+    padding:12px 12px 18px;
+  }
+  .panel::-webkit-scrollbar{width:5px;}
+  .panel::-webkit-scrollbar-thumb{background:var(--panel-border);}
+  .panel::-webkit-scrollbar-track{background:transparent;}
+  #right-panel{border-right:none; border-left:1px solid var(--panel-border);}
+
+  .sec{margin-bottom:16px; border:1px solid var(--panel-border); background:var(--bg-secondary); padding:10px 11px;}
+  .sec-title{
+    font-size:10.5px; font-weight:700; letter-spacing:1.1px; color:var(--text-secondary);
+    display:flex; align-items:center; justify-content:space-between; margin-bottom:9px;
+  }
+  .sec-title .accent-line{flex:1; height:1px; background:var(--grid-line); margin-left:8px;}
+
+  /* toggle switch */
+  .toggle{
+    width:34px; height:18px; border:1px solid var(--panel-border); position:relative; cursor:pointer; background:#050d1a; flex:none;
+  }
+  .toggle .knob{
+    position:absolute; top:1px; left:1px; width:14px; height:14px; background:var(--text-muted); transition:.15s;
+  }
+  .toggle.on{border-color:var(--cyan);}
+  .toggle.on .knob{left:17px; background:var(--cyan); box-shadow:0 0 6px 1px rgba(34,211,238,.7);}
+
+  .legend-row{display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text-secondary); padding:3px 0;}
+  .legend-row .sw{width:8px; height:8px; flex:none;}
+  .legend-row b{color:var(--text-primary); font-weight:600;}
+
+  .btn-grid{display:grid; grid-template-columns:1fr 1fr; gap:6px;}
+  .btn{
+    background:#0b1c30; border:1px solid var(--panel-border); color:var(--text-secondary);
+    font-family:var(--font); font-size:10.5px; font-weight:600; letter-spacing:.4px;
+    padding:8px 6px; cursor:pointer; text-align:center; transition:.12s;
+  }
+  .btn:hover{border-color:var(--cyan); color:var(--text-primary);}
+  .btn.active{background:rgba(34,211,238,.12); border-color:var(--cyan); color:var(--cyan);}
+  .btn.full{grid-column:1/-1;}
+
+  .field-row{display:flex; justify-content:space-between; font-size:11px; padding:3px 0; color:var(--text-secondary);}
+  .field-row b{color:var(--text-primary); font-weight:600;}
+
+  /* ---------- LEFT PANEL SPECIFIC ---------- */
+  .roi-box{border:1px dashed var(--panel-border); padding:8px; margin-top:6px; font-size:10.5px;}
+  .roi-active{color:var(--cyan); font-weight:700; letter-spacing:.5px; font-size:10.5px; margin-bottom:5px;}
+
+  /* ---------- CENTER MAP ---------- */
+  #center-panel{position:relative; background:var(--bg-primary); min-height:0; overflow:hidden;}
+  .map-head{
+    position:absolute; top:10px; left:14px; z-index:5; pointer-events:none;
+  }
+  .map-head h1{font-size:15px; letter-spacing:1px; font-weight:700;}
+  .map-head p{font-size:10.5px; color:var(--text-secondary); margin-top:2px; letter-spacing:.3px;}
+
+  .sim-badge{
+    position:absolute; top:12px; right:14px; z-index:6;
+    font-size:9.5px; font-weight:700; letter-spacing:.8px; color:var(--caution);
+    border:1px solid rgba(251,191,36,.4); background:rgba(251,191,36,.08);
+    padding:4px 8px; display:flex; align-items:center; gap:5px;
+  }
+  .sim-badge .dot{background:var(--caution); box-shadow:0 0 8px 1px rgba(251,191,36,.7);}
+
+  #mapCanvas{position:absolute; inset:0; width:100%; height:100%; display:block;}
+
+  .layer-toggles{
+    position:absolute; bottom:12px; left:14px; z-index:5; display:flex; gap:5px;
+  }
+  .layer-toggles .btn{padding:6px 9px; font-size:9.5px;}
+
+  .map-legend{
+    position:absolute; bottom:12px; right:14px; z-index:5;
+    background:rgba(7,20,38,.85); border:1px solid var(--panel-border); padding:8px 10px;
+    display:grid; grid-template-columns:1fr 1fr; gap:2px 14px;
+  }
+  .map-legend .legend-row{font-size:9.5px; padding:1.5px 0;}
+
+  .risk-caption{
+    position:absolute; left:50%; transform:translateX(-50%); top:44px; z-index:6;
+    font-size:10px; letter-spacing:1.2px; font-weight:700; color:var(--cyan);
+    background:rgba(34,211,238,.08); border:1px solid rgba(34,211,238,.4);
+    padding:4px 12px; opacity:0; transition:opacity .3s;
+  }
+  .risk-caption.show{opacity:1;}
+
+  /* floating alert cards over map */
+  #alert-stack{
+    position:absolute; top:70px; left:14px; z-index:7;
+    display:flex; flex-direction:column; gap:8px; max-width:230px;
+  }
+  .alert-card{
+    background:rgba(9,21,37,.92); border-left:3px solid var(--critical);
+    border-top:1px solid var(--panel-border); border-right:1px solid var(--panel-border); border-bottom:1px solid var(--panel-border);
+    padding:9px 10px; font-size:10.5px; animation:slideIn .35s ease;
+    backdrop-filter:blur(2px);
+  }
+  @keyframes slideIn{from{opacity:0; transform:translateX(-14px);} to{opacity:1; transform:translateX(0);}}
+  .alert-card.high{border-left-color:var(--static);}
+  .alert-card.medium{border-left-color:var(--caution);}
+  .alert-card .alert-title{font-weight:700; letter-spacing:.5px; font-size:10.5px; display:flex; align-items:center; gap:6px; margin-bottom:5px;}
+  .alert-card .alert-title .tag{font-size:8.5px; color:var(--text-muted); font-weight:600;}
+  .alert-card .kv{display:flex; justify-content:space-between; color:var(--text-secondary); padding:1.5px 0;}
+  .alert-card .kv b{color:var(--text-primary);}
+  .alert-card .action{margin-top:5px; font-size:9.5px; font-weight:700; letter-spacing:.4px;}
+  .action.crit{color:var(--critical);}
+  .action.warn{color:var(--caution);}
+
+  #threat-toast{
+    position:fixed; top:70px; right:24px; z-index:50;
+    width:270px; background:rgba(9,21,37,.96); border:1px solid var(--critical);
+    box-shadow:0 0 24px -4px rgba(244,63,94,.5);
+    padding:12px 13px; transform:translateX(320px); transition:transform .4s ease;
+  }
+  #threat-toast.show{transform:translateX(0);}
+  #threat-toast .tt-head{display:flex; align-items:center; gap:7px; font-size:11px; font-weight:700; letter-spacing:.7px; color:var(--critical); margin-bottom:6px;}
+  #threat-toast .tt-body{font-size:11px; color:var(--text-secondary); line-height:1.5;}
+  #threat-toast .tt-foot{display:flex; justify-content:space-between; margin-top:7px; font-size:10px;}
+
+  /* ---------- RIGHT PANEL TABS ---------- */
+  .tabs{display:flex; border-bottom:1px solid var(--panel-border); margin-bottom:12px;}
+  .tab{flex:1; text-align:center; font-size:10px; font-weight:700; letter-spacing:.6px; color:var(--text-muted); padding:8px 2px; cursor:pointer; border-bottom:2px solid transparent;}
+  .tab.active{color:var(--cyan); border-bottom-color:var(--cyan);}
+  .tabpane{display:none;}
+  .tabpane.active{display:block;}
+
+  .status-card{border:1px solid var(--drivable); background:rgba(52,211,153,.06); padding:11px; margin-bottom:12px;}
+  .status-card.caution{border-color:var(--caution); background:rgba(251,191,36,.06);}
+  .status-card.danger{border-color:var(--nondrivable); background:rgba(244,63,94,.08);}
+  .status-card .sc-title{font-size:10px; color:var(--text-secondary); letter-spacing:.8px; font-weight:700;}
+  .status-card .sc-value{font-size:21px; font-weight:800; margin:3px 0; letter-spacing:.5px;}
+  .status-card.default .sc-value{color:var(--drivable);}
+  .status-card.caution .sc-value{color:var(--caution);}
+  .status-card.danger .sc-value{color:var(--nondrivable);}
+  .status-card .sc-sub{font-size:10.5px; color:var(--text-secondary);}
+
+  .ring-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .ring-item{display:flex; flex-direction:column; align-items:center; gap:5px;}
+  .ring-wrap{position:relative; width:56px; height:56px;}
+  .ring-wrap svg{transform:rotate(-90deg);}
+  .ring-wrap .ring-val{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-size:10.5px; font-weight:700; color:var(--text-primary);
+  }
+  .ring-label{font-size:9px; color:var(--text-secondary); text-align:center; letter-spacing:.3px;}
+
+  table.data-table{width:100%; border-collapse:collapse; font-size:9.5px;}
+  table.data-table th{text-align:left; color:var(--text-muted); font-weight:600; padding:4px 3px; border-bottom:1px solid var(--panel-border); letter-spacing:.3px;}
+  table.data-table td{padding:4px 3px; border-bottom:1px solid rgba(22,50,74,.5); color:var(--text-secondary);}
+  table.data-table td.sev-high{color:var(--static); font-weight:700;}
+  table.data-table td.sev-crit{color:var(--critical); font-weight:700;}
+
+  .chart-wrap{border:1px solid var(--panel-border); background:#050d1a; padding:6px;}
+
+  /* ---------- BOTTOM PANEL ---------- */
+  #bottom{
+    background:linear-gradient(180deg,#050d1a,#081627);
+    display:flex; align-items:center; gap:10px; padding:0 16px;
+    overflow-x:auto; overflow-y:hidden;
+  }
+  #bottom::-webkit-scrollbar{height:4px;}
+  #bottom::-webkit-scrollbar-thumb{background:var(--panel-border);}
+  .metric-card{
+    flex:none; min-width:126px; border:1px solid var(--panel-border); background:var(--panel);
+    padding:8px 12px; position:relative;
+  }
+  .metric-card .m-label{font-size:9px; color:var(--text-muted); letter-spacing:.6px; font-weight:700;}
+  .metric-card .m-value{font-size:19px; font-weight:800; color:var(--text-primary); margin-top:2px;}
+  .metric-card .m-value span{font-size:11px; color:var(--text-secondary); font-weight:600;}
+  .metric-card .m-target{font-size:9px; color:var(--text-muted); margin-top:2px;}
+  .metric-card.accent{border-color:var(--cyan);}
+  .metric-card.accent .m-value{color:var(--cyan);}
+
+  .details-btn{
+    flex:none; border:1px solid var(--cyan); color:var(--cyan); background:rgba(34,211,238,.08);
+    font-family:var(--font); font-weight:700; font-size:10.5px; letter-spacing:.6px; padding:0 16px; height:38px; cursor:pointer;
+  }
+
+  /* ---------- DRAWER ---------- */
+  #drawer-overlay{
+    position:fixed; inset:0; background:rgba(2,6,12,.7); z-index:80; opacity:0; pointer-events:none; transition:opacity .25s;
+  }
+  #drawer-overlay.open{opacity:1; pointer-events:auto;}
+  #drawer{
+    position:fixed; right:0; top:0; bottom:0; width:min(560px,92vw); background:var(--bg-secondary);
+    border-left:1px solid var(--panel-border); z-index:81; transform:translateX(100%); transition:transform .3s ease;
+    overflow-y:auto; padding:20px;
+  }
+  #drawer.open{transform:translateX(0);}
+  #drawer h2{font-size:14px; letter-spacing:1px; margin-bottom:14px;}
+  #drawer .close-btn{position:absolute; top:16px; right:18px; cursor:pointer; color:var(--text-secondary); font-size:20px; line-height:1;}
+  .mode-cards{display:grid; grid-template-columns:1fr; gap:10px; margin-bottom:22px;}
+  .mode-card{border:1px solid var(--panel-border); padding:12px 14px; cursor:pointer; background:#0b1c30;}
+  .mode-card.active{border-color:var(--cyan); background:rgba(34,211,238,.08);}
+  .mode-card .mc-title{font-weight:700; font-size:12px; letter-spacing:.5px; color:var(--text-primary); margin-bottom:4px;}
+  .mode-card .mc-desc{font-size:10.5px; color:var(--text-secondary); line-height:1.5;}
+
+  .compare-row{display:grid; grid-template-columns:110px 1fr; gap:10px; align-items:center; margin-bottom:8px; font-size:10.5px;}
+  .compare-row .clabel{color:var(--text-secondary);}
+  .cbar-track{height:7px; background:#0b1c30; border:1px solid var(--panel-border); position:relative;}
+  .cbar-fill{height:100%; background:var(--res-med);}
+  .cbar-fill.good{background:var(--drivable);}
+  .cbar-fill.warn{background:var(--critical);}
+
+  .pipeline{display:flex; flex-direction:column; gap:0; margin-top:6px;}
+  .pnode{border:1px solid var(--panel-border); padding:7px 10px; font-size:10.5px; font-weight:600; letter-spacing:.4px; text-align:center; background:#0b1c30;}
+  .parrow{text-align:center; color:var(--cyan); font-size:11px; padding:1px 0;}
+
+  .tech-tags{display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;}
+  .tech-tag{border:1px solid var(--panel-border); font-size:9.5px; padding:4px 8px; color:var(--text-secondary);}
+
+  h3.drawer-sub{font-size:10.5px; letter-spacing:1px; color:var(--text-secondary); margin:18px 0 10px;}
+
+  @media (max-width:900px){
+    .row-main{grid-template-columns:1fr;}
+    #left-panel,#right-panel{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- HEADER -->
+  <header id="header">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div>
+        <div class="brand-name">ASTRAFOVEA</div>
+        <div class="brand-sub">Adaptive 2.5D LiDAR Perception Platform</div>
+      </div>
+    </div>
+    <div class="header-center">
+      <div class="tagline">SMARTER MAPS. SAFER DECISIONS.</div>
+      <div class="ps">SIH 2026 &nbsp;|&nbsp; DRDO &nbsp;|&nbsp; PS SIH26053</div>
+    </div>
+    <div class="header-right">
+      <div class="status-pill"><span class="dot pulse"></span>SYSTEM ONLINE</div>
+      <div class="clock mono" id="clock">—</div>
+      <div class="fps-badge mono" id="provenanceBadge" style="color:var(--text-secondary);">—</div>
+      <div class="fps-badge mono" id="fpsBadge">94.2 FPS</div>
+      <button class="menu-icon" id="menuBtn"><span></span><span></span><span></span></button>
+    </div>
+  </header>
+
+  <div class="row-main">
+
+    <!-- LEFT PANEL -->
+    <aside class="panel" id="left-panel">
+
+      <div class="sec">
+        <div class="sec-title">RESOLUTION HEATMAP<div class="accent-line"></div>
+          <div class="toggle on" id="heatmapToggle"><div class="knob"></div></div>
+        </div>
+        <div class="legend-row"><span class="sw" style="background:var(--res-high)"></span>HIGH — <b>5 cm</b></div>
+        <div class="legend-row"><span class="sw" style="background:var(--res-med)"></span>MEDIUM — <b>20 cm</b></div>
+        <div class="legend-row"><span class="sw" style="background:var(--res-low)"></span>LOW — <b>50 cm</b></div>
+        <div class="legend-row"><span class="sw" style="background:var(--text-muted); opacity:.5"></span>STATIC / BACKGROUND</div>
+        <div class="legend-row"><span class="sw" style="background:var(--dynamic)"></span>DYNAMIC OBJECT</div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-title">MAP VIEW<div class="accent-line"></div></div>
+        <div class="btn-grid">
+          <div class="btn active" data-view="top">TOP VIEW</div>
+          <div class="btn" data-view="perspective">PERSPECTIVE</div>
+          <div class="btn full" data-view="side">SIDE VIEW</div>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-title">CONTROLS<div class="accent-line"></div></div>
+        <div class="btn-grid">
+          <div class="btn" id="zoomIn">ZOOM IN</div>
+          <div class="btn" id="zoomOut">ZOOM OUT</div>
+          <div class="btn" id="rotateBtn">ROTATE</div>
+          <div class="btn" id="resetView">RESET VIEW</div>
+          <div class="btn full" id="pauseBtn">PAUSE PLAYBACK</div>
+          <div class="btn" id="prevFrameBtn">◀ PREV FRAME</div>
+          <div class="btn" id="nextFrameBtn">NEXT FRAME ▶</div>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-title">ROI SELECTOR<div class="accent-line"></div></div>
+        <div class="roi-box">
+          <div class="roi-active" id="roiStatus">ROI INACTIVE</div>
+          <div class="field-row"><span>Size</span><b>20 m × 20 m</b></div>
+          <div class="field-row"><span>Coordinates</span><b id="roiCoords">X: — Y: —</b></div>
+          <div class="field-row"><span>Resolution</span><b>5 cm</b></div>
+          <div class="field-row"><span>Reason</span><b id="roiReason">—</b></div>
+        </div>
+        <div class="btn full" style="margin-top:8px;" id="setRoiBtn">CLICK MAP TO SET ROI</div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-title">LAYERS<div class="accent-line"></div></div>
+        <div class="btn-grid">
+          <div class="btn active" data-layer="ground">GROUND</div>
+          <div class="btn active" data-layer="obstacles">OBSTACLES</div>
+          <div class="btn active" data-layer="overhead">OVERHEAD</div>
+          <div class="btn active" data-layer="risk">RISK</div>
+          <div class="btn active" data-layer="elevation">ELEVATION</div>
+          <div class="btn" data-layer="semantic">SEMANTIC</div>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- CENTER MAP -->
+    <main id="center-panel">
+      <div class="map-head">
+        <h1>2.5D LiDAR MAP</h1>
+        <p>Adaptive Variable Resolution</p>
+      </div>
+      <div class="sim-badge" id="simBadge"><span class="dot"></span>REAL DATA</div>
+      <div class="risk-caption" id="riskCaption">NORMAL RESOLUTION</div>
+
+      <canvas id="mapCanvas"></canvas>
+
+      <div id="alert-stack"></div>
+
+      <div class="layer-toggles">
+        <div class="btn active" data-hlayer="ground">GROUND</div>
+        <div class="btn active" data-hlayer="obstacles">OBSTACLES</div>
+        <div class="btn active" data-hlayer="overhead">OVERHEAD</div>
+        <div class="btn active" data-hlayer="risk">RISK</div>
+        <div class="btn active" data-hlayer="elevation">ELEVATION</div>
+        <div class="btn" data-hlayer="semantic">SEMANTIC</div>
+      </div>
+
+      <div class="map-legend" id="mapLegend">
+        <div class="legend-row"><span class="sw" style="background:var(--res-high)"></span>High Res — 5cm</div>
+        <div class="legend-row"><span class="sw" style="background:var(--drivable)"></span>Drivable</div>
+        <div class="legend-row"><span class="sw" style="background:var(--res-med)"></span>Medium — 20cm</div>
+        <div class="legend-row"><span class="sw" style="background:var(--caution)"></span>Caution</div>
+        <div class="legend-row"><span class="sw" style="background:var(--res-low)"></span>Low — 50cm</div>
+        <div class="legend-row"><span class="sw" style="background:var(--nondrivable)"></span>Non-Drivable</div>
+        <div class="legend-row"><span class="sw" style="background:var(--dynamic)"></span>Dynamic Object</div>
+        <div class="legend-row"><span class="sw" style="background:var(--static)"></span>Static Obstacle</div>
+        <div class="legend-row"><span class="sw" style="background:var(--unknown)"></span>Unknown / Occluded</div>
+        <div class="legend-row"><span class="sw" style="background:transparent"></span></div>
+      </div>
+    </main>
+
+    <!-- RIGHT PANEL -->
+    <aside class="panel" id="right-panel">
+      <div class="tabs">
+        <div class="tab active" data-tab="status">STATUS</div>
+        <div class="tab" data-tab="terrain">TERRAIN</div>
+        <div class="tab" data-tab="system">SYSTEM</div>
+      </div>
+
+      <!-- STATUS TAB -->
+      <div class="tabpane active" id="tab-status">
+        <div class="status-card default" id="terrainStatusCard">
+          <div class="sc-title">TERRAIN STATUS</div>
+          <div class="sc-value" id="terrainStatusValue">DRIVABLE</div>
+          <div class="sc-sub">Confidence: <b id="terrainConfidence">94%</b> &nbsp;|&nbsp; Safe corridor: <b id="corridorStatus">ACTIVE</b></div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-title">ENVIRONMENT STATUS<div class="accent-line"></div></div>
+          <div class="field-row"><span>Dataset</span><b id="envType">—</b></div>
+          <div class="field-row"><span>Sequence</span><b id="envSequence">—</b></div>
+          <div class="field-row"><span>Predictor</span><b id="envPredictor">—</b></div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-title">SENSOR HEALTH<div class="accent-line"></div></div>
+          <div class="field-row"><span><span class="dot" style="display:inline-block; margin-right:5px;"></span>LiDAR</span><b>CONNECTED</b></div>
+          <div class="field-row"><span>Points/frame</span><b id="pointsFrame" class="mono">—</b></div>
+          <div class="field-row"><span>Range (Far zone)</span><b id="rangeFar">—</b></div>
+          <div class="field-row" style="margin-top:5px;"><span><span class="dot" style="display:inline-block; margin-right:5px; background:var(--text-muted); box-shadow:none;"></span>Camera</span><b>UNAVAILABLE</b></div>
+          <div class="field-row" style="margin-top:5px;"><span><span class="dot" style="display:inline-block; margin-right:5px; background:var(--text-muted); box-shadow:none;"></span>IMU</span><b>UNAVAILABLE</b></div>
+          <div class="field-row" style="margin-top:5px;"><span><span class="dot" style="display:inline-block; margin-right:5px; background:var(--text-muted); box-shadow:none;"></span>GNSS</span><b>UNAVAILABLE</b></div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-title">LOCALIZATION<div class="accent-line"></div></div>
+          <div class="field-row"><span>LiDAR–IMU Fusion</span><b>UNAVAILABLE</b></div>
+          <div class="field-row"><span>Pose Confidence</span><b>UNAVAILABLE</b></div>
+        </div>
+      </div>
+
+      <!-- TERRAIN TAB -->
+      <div class="tabpane" id="tab-terrain">
+        <div class="sec">
+          <div class="sec-title">TERRAIN ANALYSIS (REAL)<div class="accent-line"></div></div>
+          <div class="field-row"><span>Mean Traversability</span><b id="meanTraversability">—</b></div>
+          <div class="field-row"><span>Hazard Regions</span><b id="hazardCount">—</b></div>
+          <div class="field-row"><span>Largest Hazard Area</span><b id="largestHazard">—</b></div>
+          <div class="field-row"><span>Road Surface Grade</span><b>UNAVAILABLE</b></div>
+          <div class="field-row"><span>Surface Roughness</span><b>UNAVAILABLE</b></div>
+          <div class="field-row"><span>Road Width</span><b>UNAVAILABLE</b></div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-title">ELEVATION PROFILE — CENTER LINE (X≈0, REAL)<div class="accent-line"></div></div>
+          <div class="chart-wrap"><canvas id="elevCanvas" width="260" height="120" style="width:100%; height:auto; display:block;"></canvas></div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-title">HAZARD REGIONS<div class="accent-line"></div></div>
+          <table class="data-table">
+            <thead><tr><th>ID</th><th>DIST</th><th>AREA</th><th>SEV</th><th>CONF</th></tr></thead>
+            <tbody id="potholeTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- SYSTEM TAB -->
+      <div class="tabpane" id="tab-system">
+        <div class="sec">
+          <div class="sec-title">AI PERCEPTION CONFIDENCE<div class="accent-line"></div></div>
+          <div class="ring-grid" id="confidenceRings"></div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-title">MAP UNCERTAINTY (REAL)<div class="accent-line"></div></div>
+          <div class="field-row"><span>Mean Point Density</span><b id="pointDensity">—</b></div>
+          <div class="field-row"><span>Empty/Unknown Cells</span><b id="unknownArea">—</b></div>
+          <div class="field-row"><span>Height Confidence</span><b>UNAVAILABLE</b></div>
+          <div class="field-row"><span>View Quality</span><b>UNAVAILABLE</b></div>
+          <div class="field-row"><span>Localization</span><b>UNAVAILABLE</b></div>
+        </div>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- BOTTOM PANEL -->
+  <footer id="bottom">
+    <div class="metric-card accent">
+      <div class="m-label">FRAME RATE</div>
+      <div class="m-value mono" id="mFps">94.2<span> FPS</span></div>
+      <div class="m-target">Target: 60 FPS</div>
+    </div>
+    <div class="metric-card">
+      <div class="m-label">PROCESSING LATENCY</div>
+      <div class="m-value mono" id="mLatency">42<span> ms</span></div>
+      <div class="m-target">Target: &lt;50 ms</div>
+    </div>
+    <div class="metric-card">
+      <div class="m-label">POINT COUNT</div>
+      <div class="m-value mono" id="mPointCount">—</div>
+      <div class="m-target">Real frame point count</div>
+    </div>
+    <div class="metric-card">
+      <div class="m-label">HAZARD REGIONS</div>
+      <div class="m-value mono" id="mHazardCount">—</div>
+      <div class="m-target">Traversability &lt; 0.40</div>
+    </div>
+    <div class="metric-card">
+      <div class="m-label">TRACKED OBJECTS</div>
+      <div class="m-value mono" id="mTrackCount">—</div>
+      <div class="m-target">MultiObjectTracker output</div>
+    </div>
+  </footer>
+
+</div>
+
+<!-- DYNAMIC THREAT TOAST -->
+<div id="threat-toast">
+  <div class="tt-head"><span class="dot" style="background:var(--critical); box-shadow:0 0 8px 1px rgba(244,63,94,.7);"></span>DYNAMIC THREAT ALERT</div>
+  <div class="tt-body" id="toastBody">Moving vehicle detected at 28 m right of planned trajectory.</div>
+  <div class="tt-foot">
+    <span style="color:var(--text-secondary)">Risk: <b id="toastRisk" style="color:var(--caution)">MEDIUM</b></span>
+    <span style="color:var(--text-secondary)">Fovea: <b style="color:var(--cyan)">EXPANDED</b></span>
+  </div>
+</div>
+
+<!-- DRAWER -->
+<div id="drawer-overlay"></div>
+<div id="drawer">
+  <span class="close-btn" id="closeDrawer">&times;</span>
+  <h2>SYSTEM DETAILS</h2>
+
+  <h3 class="drawer-sub">SYSTEM MODE</h3>
+  <div class="mode-cards" id="modeCards">
+    <div class="mode-card active" data-mode="adaptive">
+      <div class="mc-title">FULLY ADAPTIVE</div>
+      <div class="mc-desc">Dynamic resolution + risk-aware fovea + AI perception</div>
+    </div>
+    <div class="mode-card" data-mode="fixed">
+      <div class="mc-title">FIXED HIGH-RES</div>
+      <div class="mc-desc">Maximum resolution, high compute usage</div>
+    </div>
+    <div class="mode-card" data-mode="power">
+      <div class="mc-title">POWER SAVER</div>
+      <div class="mc-desc">Low resolution, reduced power, lower computational load</div>
+    </div>
+  </div>
+
+  <h3 class="drawer-sub">WHY ADAPTIVE?</h3>
+  <div class="compare-row"><div class="clabel">Memory</div><div class="cbar-track"><div class="cbar-fill good" style="width:28%"></div></div></div>
+  <div class="compare-row"><div class="clabel">Compute</div><div class="cbar-track"><div class="cbar-fill good" style="width:24%"></div></div></div>
+  <div class="compare-row"><div class="clabel">Near-field detail</div><div class="cbar-track"><div class="cbar-fill" style="width:96%"></div></div></div>
+  <div class="compare-row"><div class="clabel">Hazard detail</div><div class="cbar-track"><div class="cbar-fill good" style="width:97%"></div></div></div>
+  <div class="compare-row"><div class="clabel">Far-field detail</div><div class="cbar-track"><div class="cbar-fill" style="width:18%"></div></div></div>
+  <div class="compare-row"><div class="clabel">Safety</div><div class="cbar-track"><div class="cbar-fill good" style="width:95%"></div></div></div>
+  <p style="font-size:10.5px; color:var(--text-secondary); line-height:1.6; margin-top:6px;">Preserve detail where it matters. Reduce computation where it doesn't.</p>
+
+  <h3 class="drawer-sub">SYSTEM PIPELINE</h3>
+  <div class="pipeline">
+    <div class="pnode">3D LIDAR</div><div class="parrow">↓</div>
+    <div class="pnode">IMU DESKEW</div><div class="parrow">↓</div>
+    <div class="pnode">SEMANTIC SEGMENTATION</div><div class="parrow">↓</div>
+    <div class="pnode">VARIABLE-RESOLUTION 2.5D GRID</div><div class="parrow">↓</div>
+    <div class="pnode">OBJECT DETECTION + TRACKING</div><div class="parrow">↓</div>
+    <div class="pnode">UNCERTAINTY ESTIMATION</div><div class="parrow">↓</div>
+    <div class="pnode">TRAVERSABILITY ANALYSIS</div><div class="parrow">↓</div>
+    <div class="pnode">RISK PREDICTION</div><div class="parrow">↓</div>
+    <div class="pnode">RISK-AWARE FOVEA</div><div class="parrow">↓</div>
+    <div class="pnode" style="border-color:var(--cyan); color:var(--cyan);">SAFE PATH OUTPUT</div>
+  </div>
+
+  <h3 class="drawer-sub">TECH STACK</h3>
+  <div class="tech-tags">
+    <span class="tech-tag">ROS2</span><span class="tech-tag">LiDAR</span><span class="tech-tag">IMU</span>
+    <span class="tech-tag">GNSS</span><span class="tech-tag">Jetson Orin</span><span class="tech-tag">WebGL</span>
+    <span class="tech-tag">Three.js</span><span class="tech-tag">WebGPU</span><span class="tech-tag">grid_map</span>
+    <span class="tech-tag">RandLA-Net</span><span class="tech-tag">Cylinder3D</span><span class="tech-tag">DBSCAN</span>
+    <span class="tech-tag">Kalman / SORT</span>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* =====================================================================
+   REAL-DATA-DRIVEN ASTRAFOVEA DASHBOARD
+   =====================================================================
+   Every value rendered here comes from frame_NNNN.json / manifest.json,
+   produced by src/dashboard/export_web_dashboard_data.py running the
+   real FOVEAX pipeline (real point clouds, real MultiObjectTracker,
+   real elevation/traversability/semantic grids, real hazard clustering).
+   Nothing here is Math.random()/Math.sin() synthetic data.
+
+   Canonical traversability convention (DO NOT INVERT):
+     1.0 = safe, 0.0 = blocked. Safe >= 0.70, Caution 0.40-0.70,
+     Blocked < 0.40 (src/06_terrain_traversability.py).
+
+   Requires being served over http:// (fetch() cannot read local JSON
+   over file://). Run from the export directory:
+     python -m http.server 8000
+   then open http://localhost:8000/astrafovea.html
+   ===================================================================== */
+
+/* ===================== STATE ===================== */
+const state = {
+  paused:false,
+  view:'top',            // top | perspective | side
+  zoom:1,
+  rotation:0,
+  heatmapOn:true,
+  layers:{ground:true, obstacles:true, overhead:true, risk:true, elevation:true, semantic:false},
+  mode:'adaptive',
+  roi:null,
+  frames:[],              // loaded frame_NNNN.json contents, in order
+  manifest:null,
+  frameIdx:0,
+  playTimer:null,
+};
+
+const FOVEAX_CLASS_NAMES = {
+  0:'DRIVABLE_GROUND', 1:'ROUGH_TERRAIN', 2:'VEGETATION', 3:'BUILDING_WALL',
+  4:'SOLID_OBSTACLE', 5:'VEHICLE', 6:'PEDESTRIAN', 7:'UNKNOWN',
+};
+/* Colors reused verbatim from the existing :root palette -- no new colors introduced. */
+const SEMANTIC_COLOR = {
+  0:'var(--drivable)', 1:'var(--caution)', 2:'var(--res-med)', 3:'var(--static)',
+  4:'var(--nondrivable)', 5:'var(--dynamic)', 6:'var(--cyan)', 7:'var(--unknown)',
+};
+
+function currentFrame(){ return state.frames[state.frameIdx] || null; }
+
+/* ===================== CLOCK ===================== */
+function tickClock(){
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2,'0');
+  const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const mm = months[d.getMonth()];
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mi = String(d.getMinutes()).padStart(2,'0');
+  const ss = String(d.getSeconds()).padStart(2,'0');
+  document.getElementById('clock').textContent = `${dd} ${mm} ${yyyy} | ${hh}:${mi}:${ss}`;
+}
+tickClock(); setInterval(tickClock, 1000);
+
+/* ===================== CANVAS SETUP ===================== */
+const canvas = document.getElementById('mapCanvas');
+const ctx = canvas.getContext('2d');
+const centerPanel = document.getElementById('center-panel');
+
+function resizeCanvas(){
+  const rect = centerPanel.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width*dpr;
+  canvas.height = rect.height*dpr;
+  canvas.style.width = rect.width+'px';
+  canvas.style.height = rect.height+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener('resize', resizeCanvas);
+
+/* ===================== WORLD -> SCREEN PROJECTION ===================== */
+/* World coords now come directly from the real export grid's extent_m
+   (x_min,x_max,y_min,y_max = -100..100, -100..100), forward = +y. */
+function project(wx, wy){
+  const rect = centerPanel.getBoundingClientRect();
+  const W = rect.width, H = rect.height;
+  const scale = (H/110) * state.zoom;
+  const egoScreenX = W/2 + state.rotation*40;
+  const egoScreenY = H - 46;
+
+  let sx, sy;
+  if(state.view==='side'){
+    sx = W/2 + wx*scale*0.5;
+    sy = egoScreenY - wy*scale*0.9;
+  } else {
+    sx = egoScreenX + wx*scale;
+    sy = egoScreenY - wy*scale;
+  }
+  if(state.view==='perspective'){
+    const depth = wy/100;
+    const pull = depth*0.55;
+    sx = sx + (egoScreenX - sx)*pull;
+    sy = egoScreenY - (wy*scale)*(1-depth*0.35);
+  }
+  return {x:sx, y:sy, scale};
+}
+
+/* Real color mapping for the canonical traversability convention.
+   1.0=safe(green var(--drivable)) .. 0.0=blocked(red var(--nondrivable)),
+   Caution band (0.40-0.70) = var(--caution) yellow. Interpolated, not a
+   hard cutoff, so the map reads as a smooth gradient like the verified
+   Qt dashboard's RdYlGn colormap. */
+function traversabilityColor(v){
+  if(v==null || Number.isNaN(v)) return null;
+  const safe = getComputedStyle(document.documentElement).getPropertyValue('--drivable').trim();
+  const caution = getComputedStyle(document.documentElement).getPropertyValue('--caution').trim();
+  const blocked = getComputedStyle(document.documentElement).getPropertyValue('--nondrivable').trim();
+  function hexToRgb(h){ h=h.replace('#',''); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
+  function lerp(a,b,t){ return a+(b-a)*t; }
+  function mix(c1,c2,t){ const a=hexToRgb(c1),b=hexToRgb(c2); return `rgb(${lerp(a[0],b[0],t)|0},${lerp(a[1],b[1],t)|0},${lerp(a[2],b[2],t)|0})`; }
+  if(v>=0.70){ return safe; }
+  if(v>=0.40){ const t=(0.70-v)/(0.70-0.40); return mix(safe,caution,t); }
+  const t=Math.min(1,(0.40-v)/0.40); return mix(caution,blocked,t);
+}
+
+function elevationColor(v, vmin, vmax){
+  if(v==null || Number.isNaN(v) || vmax<=vmin) return null;
+  const t = Math.max(0,Math.min(1,(v-vmin)/(vmax-vmin)));
+  // dark background -> cyan, reusing only existing tokens' hue family.
+  const r = Math.round(8 + t*20), g = Math.round(20 + t*190), b = Math.round(38 + t*200);
+  return `rgb(${r},${g},${b})`;
+}
+
+/* ===================== DRAW (real grid rendering) ===================== */
+function draw(){
+  const rect = centerPanel.getBoundingClientRect();
+  const W = rect.width, H = rect.height;
+  ctx.clearRect(0,0,W,H);
+
+  const frame = currentFrame();
+  if(!frame){
+    ctx.fillStyle = 'rgba(148,163,184,0.6)';
+    ctx.font = '13px Inter, sans-serif';
+    ctx.fillText('No frame data loaded -- run export_web_dashboard_data.py first.', 20, 30);
+    return;
+  }
+
+  const grid = frame.grid;
+  const [x_min,x_max,y_min,y_max] = grid.extent_m;
+  const ego = project(0,0);
+
+  // real resolution zone rings (15m / 35m / 100m), from resolution_zones
+  frame.resolution_zones.forEach(z=>{
+    const p = project(0, z.r_max);
+    const radius = Math.hypot(p.x-ego.x, p.y-ego.y);
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(34,211,238,0.16)';
+    ctx.lineWidth = 1;
+    ctx.arc(ego.x, ego.y, radius, Math.PI*1.02, Math.PI*1.98);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(148,163,184,0.55)';
+    ctx.font = '9px Inter, sans-serif';
+    ctx.fillText(z.r_max+'m ('+z.name+')', ego.x + radius*0.02 + 4, ego.y - radius + 10);
+  });
+
+  // GROUND layer: toggles the base grid canvas on/off entirely.
+  if(state.layers.ground){
+    const baseLayer = state.layers.semantic ? 'semantic' : (state.layers.elevation ? 'elevation' : 'traversability');
+    let vmin=Infinity, vmax=-Infinity;
+    if(baseLayer==='elevation'){
+      for(const row of grid.elevation) for(const v of row){ if(v!=null){ if(v<vmin)vmin=v; if(v>vmax)vmax=v; } }
+    }
+    const cellW = (project(x_min+grid.resolution_m,0).x - project(x_min,0).x) || 2;
+    const cellH = (project(0,y_min).y - project(0,y_min+grid.resolution_m).y) || 2;
+    for(let r=0;r<grid.rows;r++){
+      for(let c=0;c<grid.cols;c++){
+        const wx = x_min + (c+0.5)*grid.resolution_m;
+        const wy = y_min + (r+0.5)*grid.resolution_m;
+        const p = project(wx, wy);
+        if(p.x<-cellW||p.x>W+cellW||p.y<-cellH||p.y>H+cellH) continue;
+
+        let color = null;
+        if(baseLayer==='traversability'){
+          color = traversabilityColor(grid.traversability[r][c]);
+        } else if(baseLayer==='elevation'){
+          color = elevationColor(grid.elevation[r][c], vmin, vmax);
+        } else {
+          const cls = grid.semantic_class[r][c];
+          color = cls==null ? null : SEMANTIC_COLOR[cls];
+        }
+        if(!color) continue;
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.78;
+        ctx.fillRect(p.x-cellW/2, p.y-cellH/2, cellW+0.6, cellH+0.6);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // OVERHEAD layer: repurposed as real hazard-cluster centroid markers
+  // (there is no real overhead-structure detector in FOVEAX; rather than
+  // keep the fictional bridge marker, this layer now draws every real
+  // hazard cluster centroid as a small marker on the map).
+  if(state.layers.overhead){
+    frame.hazard_clusters.forEach(hz=>{
+      const p = project(0, hz.distance_m); // bearing not exported; placed on forward axis
+      ctx.strokeStyle = hz.severity==='Critical' ? 'rgba(244,63,94,0.85)' : 'rgba(251,191,36,0.85)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 6*state.zoom, 0, Math.PI*2); ctx.stroke();
+    });
+  }
+
+  // RISK layer: pulsing glow on real hazard clusters (was: fake fovea patches).
+  if(state.layers.risk){
+    const pulse = 0.75 + 0.25*Math.sin(performance.now()/1000*3);
+    frame.hazard_clusters.forEach(hz=>{
+      const p = project(0, hz.distance_m);
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(34,211,238,${0.5*pulse})`;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5,4]);
+      ctx.arc(p.x, p.y, 10*state.zoom, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    });
+  }
+
+  // OBSTACLES layer now controls real tracked-object visibility
+  // (was: fake static buildings/trees -- no real building/tree detection
+  // exists in the FOVEAX pipeline, so this toggle is repurposed to the
+  // real equivalent object category: tracked obstacles).
+  if(state.layers.obstacles) frame.tracked_objects.forEach(t=>{
+    const p = project(t.x, t.y);
+    const isVehicle = /VEHICLE/i.test(t.class_name);
+    const isPed = /PEDESTRIAN/i.test(t.class_name);
+    const color = t.dynamic ? 'var(--dynamic)' : 'var(--static)';
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(t.dynamic?'--dynamic':'--static').trim();
+    if(isVehicle){
+      ctx.save(); ctx.translate(p.x,p.y);
+      ctx.fillRect(-6*state.zoom,-10*state.zoom,12*state.zoom,20*state.zoom);
+      ctx.restore();
+    } else {
+      ctx.beginPath(); ctx.arc(p.x,p.y,4.5*state.zoom,0,Math.PI*2); ctx.fill();
+    }
+    ctx.font='8.5px Inter, sans-serif'; ctx.fillText(`#${t.id} ${t.class_name}`, p.x+8, p.y+3);
+  });
+
+  // ROI box
+  if(state.roi){
+    const p0 = project(state.roi.x-10, state.roi.y-10);
+    const p1 = project(state.roi.x+10, state.roi.y+10);
+    ctx.strokeStyle='#22D3EE'; ctx.lineWidth=1.5; ctx.setLineDash([3,3]);
+    ctx.strokeRect(Math.min(p0.x,p1.x), Math.min(p0.y,p1.y), Math.abs(p1.x-p0.x), Math.abs(p1.y-p0.y));
+    ctx.setLineDash([]);
+  }
+
+  // ego vehicle marker
+  ctx.save();
+  ctx.translate(ego.x, ego.y);
+  ctx.fillStyle = '#22D3EE';
+  ctx.shadowColor = 'rgba(34,211,238,0.9)';
+  ctx.shadowBlur = 14;
+  ctx.beginPath();
+  ctx.moveTo(0,-11); ctx.lineTo(8,9); ctx.lineTo(0,4); ctx.lineTo(-8,9); ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+/* ===================== ALERTS (triggered by real hazard clusters) ===================== */
+const alertStack = document.getElementById('alert-stack');
+const riskCaption = document.getElementById('riskCaption');
+let riskCaptionTimer=null;
+let lastAlertedClusterKey = null;
+
+function showRiskCaption(text, holdMs=2600){
+  riskCaption.textContent = text;
+  riskCaption.classList.add('show');
+  clearTimeout(riskCaptionTimer);
+  riskCaptionTimer = setTimeout(()=>riskCaption.classList.remove('show'), holdMs);
+}
+
+function pushAlert({title, tag, severityClass, rows, action, actionClass}){
+  const card = document.createElement('div');
+  card.className = 'alert-card ' + (severityClass||'');
+  card.innerHTML = `
+    <div class="alert-title">${title}<span class="tag">${tag||''}</span></div>
+    ${rows.map(r=>`<div class="kv"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('')}
+    ${action ? `<div class="action ${actionClass||''}">${action}</div>` : ''}
+  `;
+  alertStack.appendChild(card);
+  while(alertStack.children.length>3){ alertStack.removeChild(alertStack.firstChild); }
+  setTimeout(()=>{ if(card.parentNode){ card.style.opacity='0'; card.style.transition='opacity .4s'; setTimeout(()=>card.remove(),400); } }, 8000);
+}
+
+const toast = document.getElementById('threat-toast');
+function showThreatToast(body, risk){
+  document.getElementById('toastBody').textContent = body;
+  document.getElementById('toastRisk').textContent = risk;
+  toast.classList.add('show');
+  setTimeout(()=>toast.classList.remove('show'), 6000);
+}
+
+/* Real alert: fires when the current frame's closest hazard cluster differs
+   from the last one alerted on (i.e. a genuinely new real hazard, not a
+   scripted timer). Severity/distance/area/confidence all real fields. */
+function maybeAlertOnRealHazard(frame){
+  if(!frame.hazard_clusters.length) return;
+  const nearest = frame.hazard_clusters[0]; // pre-sorted by distance_m
+  const key = frame.frame_idx+':'+nearest.cluster_id;
+  if(key === lastAlertedClusterKey) return;
+  lastAlertedClusterKey = key;
+
+  const isCrit = nearest.severity === 'Critical';
+  showRiskCaption(isCrit ? 'CRITICAL HAZARD' : 'HAZARD DETECTED', 2000);
+  pushAlert({
+    title: 'TERRAIN HAZARD REGION', tag: '#'+nearest.cluster_id,
+    severityClass: isCrit ? 'high' : 'medium',
+    rows: [
+      ['Distance', nearest.distance_m+' m'],
+      ['Area', nearest.area_m2+' m²'],
+      ['Min Traversability', nearest.min_traversability.toFixed(2)],
+      ['Confidence', (nearest.confidence*100).toFixed(0)+'%'],
+      ['Severity', nearest.severity.toUpperCase()],
+    ],
+    action: isCrit ? 'AVOID REGION' : 'PROCEED WITH CAUTION',
+    actionClass: isCrit ? 'crit' : 'warn',
+  });
+  if(isCrit){
+    showThreatToast(`Critical hazard region ${nearest.distance_m} m ahead (min traversability ${nearest.min_traversability.toFixed(2)}).`, 'HIGH');
+  }
+}
+
+function setTerrainStatus(frame){
+  const card = document.getElementById('terrainStatusCard');
+  const nearest = frame.hazard_clusters[0];
+  let cls='default', value='DRIVABLE', corridor='ACTIVE';
+  if(nearest){
+    const inNear = frame.resolution_zones[0]; // Near zone
+    if(nearest.distance_m <= inNear.r_max && nearest.severity==='Critical'){
+      cls='danger'; value='HAZARD NEAR'; corridor='BLOCKED';
+    } else if(nearest.distance_m <= frame.resolution_zones[1].r_max){
+      cls='caution'; value='CAUTION'; corridor='REDUCED';
+    }
+  }
+  card.className = 'status-card ' + cls;
+  document.getElementById('terrainStatusValue').textContent = value;
+
+  // Real mean traversability across all occupied grid cells this frame.
+  let sum=0, n=0;
+  for(const row of frame.grid.traversability) for(const v of row){ if(v!=null){ sum+=v; n++; } }
+  const meanTrav = n>0 ? sum/n : null;
+  document.getElementById('terrainConfidence').textContent = meanTrav!=null ? (meanTrav*100).toFixed(0)+'%' : 'N/A';
+  document.getElementById('corridorStatus').textContent = corridor;
+  return meanTrav;
+}
+
+/* ===================== UI: LEFT PANEL CONTROLS ===================== */
+document.getElementById('heatmapToggle').addEventListener('click', function(){
+  state.heatmapOn = !state.heatmapOn;
+  this.classList.toggle('on', state.heatmapOn);
+});
+
+document.querySelectorAll('[data-view]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('[data-view]').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    state.view = btn.dataset.view;
+  });
+});
+
+document.getElementById('zoomIn').addEventListener('click', ()=>{ state.zoom = Math.min(3, state.zoom*1.2); });
+document.getElementById('zoomOut').addEventListener('click', ()=>{ state.zoom = Math.max(0.4, state.zoom/1.2); });
+document.getElementById('rotateBtn').addEventListener('click', ()=>{ state.rotation = (state.rotation+1)%4; });
+document.getElementById('resetView').addEventListener('click', ()=>{
+  state.zoom=1; state.rotation=0; state.view='top'; state.roi=null;
+  document.querySelectorAll('[data-view]').forEach(b=>b.classList.remove('active'));
+  document.querySelector('[data-view="top"]').classList.add('active');
+  document.getElementById('roiStatus').textContent='ROI INACTIVE';
+  document.getElementById('roiCoords').textContent='X: — Y: —';
+  document.getElementById('roiReason').textContent='—';
+});
+
+const pauseBtn = document.getElementById('pauseBtn');
+pauseBtn.addEventListener('click', ()=>{
+  state.paused = !state.paused;
+  pauseBtn.textContent = state.paused ? 'RESUME PLAYBACK' : 'PAUSE PLAYBACK';
+  pauseBtn.classList.toggle('active', state.paused);
+  if(state.paused) stopPlayback(); else startPlayback();
+});
+
+document.getElementById('prevFrameBtn').addEventListener('click', ()=>{
+  stopPlayback(); state.paused = true;
+  pauseBtn.textContent='RESUME PLAYBACK'; pauseBtn.classList.add('active');
+  goToFrame(state.frameIdx - 1);
+});
+document.getElementById('nextFrameBtn').addEventListener('click', ()=>{
+  stopPlayback(); state.paused = true;
+  pauseBtn.textContent='RESUME PLAYBACK'; pauseBtn.classList.add('active');
+  goToFrame(state.frameIdx + 1);
+});
+
+document.querySelectorAll('[data-layer]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const key = btn.dataset.layer;
+    state.layers[key] = !state.layers[key];
+    btn.classList.toggle('active', state.layers[key]);
+    document.querySelectorAll(`[data-hlayer="${key}"]`).forEach(b=>b.classList.toggle('active', state.layers[key]));
+  });
+});
+document.querySelectorAll('[data-hlayer]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const key = btn.dataset.hlayer;
+    state.layers[key] = !state.layers[key];
+    btn.classList.toggle('active', state.layers[key]);
+    document.querySelectorAll(`[data-layer="${key}"]`).forEach(b=>b.classList.toggle('active', state.layers[key]));
+  });
+});
+
+canvas.addEventListener('click', (e)=>{
+  const rect = canvas.getBoundingClientRect();
+  const sx = e.clientX-rect.left, sy = e.clientY-rect.top;
+  // invert approx projection for top view
+  const scale = (rect.height/110)*state.zoom;
+  const egoScreenX = rect.width/2 + state.rotation*40;
+  const egoScreenY = rect.height - 46;
+  const wx = (sx-egoScreenX)/scale;
+  const wy = (egoScreenY-sy)/scale;
+  state.roi = {x:wx, y:wy};
+  document.getElementById('roiStatus').textContent='ROI ACTIVE';
+  document.getElementById('roiCoords').textContent = `X: ${wx.toFixed(1)} Y: ${wy.toFixed(1)}`;
+  document.getElementById('roiReason').textContent='Manual Focus';
+});
+
+/* ===================== CONFIDENCE RINGS (real class_confidence, or N/A) ===================== */
+function ring(pct){
+  const r=24, c=2*Math.PI*r;
+  const off = c*(1-pct/100);
+  return `<div class="ring-wrap"><svg width="56" height="56">
+    <circle cx="28" cy="28" r="${r}" stroke="#16324A" stroke-width="4" fill="none"/>
+    <circle cx="28" cy="28" r="${r}" stroke="#22D3EE" stroke-width="4" fill="none" stroke-dasharray="${c}" stroke-dashoffset="${off}" stroke-linecap="round"/>
+  </svg><div class="ring-val">${pct}%</div></div>`;
+}
+function ringNA(){
+  return `<div class="ring-wrap"><svg width="56" height="56">
+    <circle cx="28" cy="28" r="24" stroke="#16324A" stroke-width="4" fill="none"/>
+  </svg><div class="ring-val" style="color:var(--text-muted); font-size:9px;">N/A</div></div>`;
+}
+const ringsEl = document.getElementById('confidenceRings');
+function renderConfidenceRings(frame){
+  ringsEl.innerHTML = '';
+  const cc = frame.class_confidence;
+  if(cc === 'Unavailable' || !cc){
+    const wrap = document.createElement('div');
+    wrap.className='ring-item'; wrap.style.gridColumn='1/-1';
+    wrap.innerHTML = `<div style="font-size:10.5px; color:var(--text-muted); padding:10px 0;">No model confidence available for predictor="${frame.predictor}" (ground_truth/mock have no softmax confidence).</div>`;
+    ringsEl.appendChild(wrap);
+    return;
+  }
+  Object.entries(cc).forEach(([label,frac])=>{
+    const pct = Math.round(frac*1000)/10;
+    const wrap = document.createElement('div');
+    wrap.className='ring-item';
+    wrap.innerHTML = ring(pct) + `<div class="ring-label">${label}</div>`;
+    ringsEl.appendChild(wrap);
+  });
+}
+
+/* ===================== HAZARD REGIONS TABLE (real hazard_clusters) ===================== */
+const tbody = document.getElementById('potholeTableBody');
+function renderHazardTable(frame){
+  tbody.innerHTML = '';
+  frame.hazard_clusters.forEach(hz=>{
+    const tr = document.createElement('tr');
+    const sevClass = hz.severity==='Critical' ? 'sev-crit' : 'sev-high';
+    tr.innerHTML = `<td>#${hz.cluster_id}</td><td>${hz.distance_m} m</td><td>${hz.area_m2} m²</td><td class="${sevClass}">${hz.severity}</td><td>${(hz.confidence*100).toFixed(0)}%</td>`;
+    tbody.appendChild(tr);
+  });
+  if(frame.hazard_clusters.length===0){
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted); text-align:center; padding:8px 0;">No hazard regions this frame</td></tr>';
+  }
+}
+
+/* ===================== ELEVATION PROFILE (real grid centerline, x≈0) ===================== */
+const elevCanvas = document.getElementById('elevCanvas');
+const ectx = elevCanvas.getContext('2d');
+function drawElevationProfile(frame){
+  const W=elevCanvas.width, H=elevCanvas.height;
+  ectx.clearRect(0,0,W,H);
+  ectx.strokeStyle='#123047'; ectx.lineWidth=1;
+  for(let i=0;i<=4;i++){
+    const y=H*i/4; ectx.beginPath(); ectx.moveTo(0,y); ectx.lineTo(W,y); ectx.stroke();
+  }
+  const grid = frame.grid;
+  const [x_min,x_max,y_min,y_max] = grid.extent_m;
+  const centerCol = Math.floor((0 - x_min) / grid.resolution_m);
+
+  const values = [];
+  for(let r=0;r<grid.rows;r++){
+    const v = grid.elevation[r][centerCol];
+    values.push(v);
+  }
+  const valid = values.filter(v=>v!=null);
+  if(valid.length===0){
+    ectx.fillStyle='#64748B'; ectx.font='9px Inter, sans-serif';
+    ectx.fillText('No real elevation data along x≈0 this frame', 8, H/2);
+    return;
+  }
+  const vmin = Math.min(...valid), vmax = Math.max(...valid);
+  const range = Math.max(0.01, vmax-vmin);
+
+  ectx.beginPath();
+  ectx.strokeStyle='#3B82F6'; ectx.lineWidth=1.6;
+  let started=false;
+  for(let r=0;r<grid.rows;r++){
+    const v = values[r];
+    if(v==null) continue;
+    const x = (r/grid.rows)*W;
+    const y = H - 10 - ((v-vmin)/range)*(H-20);
+    if(!started){ ectx.moveTo(x,y); started=true; } else ectx.lineTo(x,y);
+  }
+  ectx.stroke();
+  ectx.fillStyle='#64748B'; ectx.font='8px Inter, sans-serif';
+  ectx.fillText(y_min+'m', 2, H-2); ectx.fillText(y_max+'m', W-28, H-2);
+  ectx.fillText(`z: ${vmin.toFixed(2)}..${vmax.toFixed(2)} m`, 2, 10);
+}
+
+/* ===================== FRAME RENDER (ties all real data to the DOM) ===================== */
+function updateMapLegend(){
+  const legend = document.getElementById('mapLegend');
+  const base = state.layers.semantic ? 'semantic' : (state.layers.elevation ? 'elevation' : 'traversability');
+  if(base==='traversability'){
+    legend.innerHTML = `
+      <div class="legend-row"><span class="sw" style="background:var(--drivable)"></span>Safe (&ge;0.70)</div>
+      <div class="legend-row"><span class="sw" style="background:var(--caution)"></span>Caution (0.40-0.70)</div>
+      <div class="legend-row"><span class="sw" style="background:var(--nondrivable)"></span>Blocked (&lt;0.40)</div>
+      <div class="legend-row"><span class="sw" style="background:var(--dynamic)"></span>Dynamic Object</div>
+      <div class="legend-row"><span class="sw" style="background:var(--static)"></span>Static Object</div>`;
+  } else if(base==='elevation'){
+    legend.innerHTML = `
+      <div class="legend-row"><span class="sw" style="background:#081627"></span>Low Z</div>
+      <div class="legend-row"><span class="sw" style="background:#22D3EE"></span>High Z</div>
+      <div class="legend-row"><span class="sw" style="background:var(--dynamic)"></span>Dynamic Object</div>
+      <div class="legend-row"><span class="sw" style="background:var(--static)"></span>Static Object</div>`;
+  } else {
+    legend.innerHTML = Object.entries(FOVEAX_CLASS_NAMES).map(([id,name])=>
+      `<div class="legend-row"><span class="sw" style="background:${SEMANTIC_COLOR[id]}"></span>${name}</div>`
+    ).join('');
+  }
+}
+
+function renderFrame(){
+  const frame = currentFrame();
+  if(!frame) return;
+
+  document.getElementById('fpsBadge').textContent = frame.fps.toFixed(1)+' FPS';
+  document.getElementById('provenanceBadge').textContent = frame.provenance.toUpperCase();
+  document.getElementById('mFps').innerHTML = frame.fps.toFixed(1)+'<span> FPS</span>';
+  document.getElementById('mLatency').innerHTML = frame.latency_ms.toFixed(0)+'<span> ms</span>';
+  document.getElementById('pointsFrame').textContent = frame.point_count.toLocaleString();
+  document.getElementById('rangeFar').textContent = frame.resolution_zones[frame.resolution_zones.length-1].r_max+' m';
+  document.getElementById('mPointCount').textContent = frame.point_count.toLocaleString();
+  document.getElementById('mHazardCount').textContent = frame.hazard_clusters.length;
+  document.getElementById('mTrackCount').textContent = frame.tracked_objects.length;
+  document.getElementById('envType').textContent = frame.dataset.toUpperCase();
+  document.getElementById('envSequence').textContent = frame.sequence;
+  document.getElementById('envPredictor').textContent = frame.predictor;
+  document.getElementById('hazardCount').textContent = frame.hazard_clusters.length;
+  const largest = frame.hazard_clusters.reduce((a,b)=> (b.area_m2>(a?a.area_m2:-1)?b:a), null);
+  document.getElementById('largestHazard').textContent = largest ? largest.area_m2+' m² ('+largest.severity+')' : 'None';
+
+  // Real mean point density (same density/20 normalization as
+  // src/10_ai_semantic_2point5d_map.py's build_semantic_grid map_confidence).
+  let densSum=0, densN=0, emptyCells=0, totalCells=0;
+  for(const row of frame.grid.point_density){
+    for(const d of row){ totalCells++; if(d>0){ densSum+=d; densN++; } else emptyCells++; }
+  }
+  const meanDensity = densN>0 ? Math.min(1, (densSum/densN)/20) : 0;
+  document.getElementById('pointDensity').textContent = (meanDensity*100).toFixed(0)+'%';
+  document.getElementById('unknownArea').textContent = totalCells>0 ? ((emptyCells/totalCells)*100).toFixed(1)+'%' : 'N/A';
+
+  const meanTrav = setTerrainStatus(frame);
+  document.getElementById('meanTraversability').textContent = meanTrav!=null ? (meanTrav*100).toFixed(0)+'%' : 'N/A';
+
+  renderConfidenceRings(frame);
+  renderHazardTable(frame);
+  drawElevationProfile(frame);
+  updateMapLegend();
+  maybeAlertOnRealHazard(frame);
+
+  document.getElementById('roiStatus').textContent = state.roi ? 'ROI ACTIVE' : 'ROI INACTIVE';
+
+  draw();
+}
+
+function goToFrame(idx){
+  if(state.frames.length===0) return;
+  state.frameIdx = ((idx % state.frames.length) + state.frames.length) % state.frames.length;
+  renderFrame();
+}
+
+function startPlayback(){
+  stopPlayback();
+  state.playTimer = setInterval(()=>{ goToFrame(state.frameIdx+1); }, 600);
+}
+function stopPlayback(){
+  if(state.playTimer){ clearInterval(state.playTimer); state.playTimer=null; }
+}
+
+document.querySelectorAll('[data-layer], [data-hlayer]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{ updateMapLegend(); draw(); });
+});
+
+/* ===================== TABS ===================== */
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.tabpane').forEach(p=>p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-'+tab.dataset.tab).classList.add('active');
+  });
+});
+
+/* ===================== DRAWER ===================== */
+const drawer = document.getElementById('drawer');
+const drawerOverlay = document.getElementById('drawer-overlay');
+const openDrawerBtn = document.getElementById('openDrawer');
+if (openDrawerBtn) {
+  openDrawerBtn.addEventListener('click', ()=>{ drawer.classList.add('open'); drawerOverlay.classList.add('open'); });
+}
+document.getElementById('closeDrawer').addEventListener('click', closeDrawer);
+drawerOverlay.addEventListener('click', closeDrawer);
+function closeDrawer(){ drawer.classList.remove('open'); drawerOverlay.classList.remove('open'); }
+document.getElementById('menuBtn').addEventListener('click', ()=>{ drawer.classList.add('open'); drawerOverlay.classList.add('open'); });
+
+document.querySelectorAll('.mode-card').forEach(card=>{
+  card.addEventListener('click', ()=>{
+    document.querySelectorAll('.mode-card').forEach(c=>c.classList.remove('active'));
+    card.classList.add('active');
+    state.mode = card.dataset.mode;
+    if(state.mode==='fixed'){ state.zoom = state.zoom; }
+  });
+});
+
+/* ===================== REDRAW LOOP (visual only -- risk-pulse animation;
+   data only changes on real frame steps via goToFrame/renderFrame) ===================== */
+function redrawLoop(){
+  requestAnimationFrame(redrawLoop);
+  if(state.frames.length>0) draw();
+}
+
+/* ===================== REAL DATA LOADING ===================== */
+/* Export dir is configurable via ?dir=<name> (default: same directory as
+   this HTML file). Point --dir at a subfolder produced by
+   export_web_dashboard_data.py, e.g. ?dir=rellis3d if you served from a
+   parent folder containing multiple export subfolders. */
+function exportBaseUrl(){
+  const params = new URLSearchParams(window.location.search);
+  const dir = params.get('dir');
+  return dir ? dir.replace(/\/$/,'') + '/' : '';
+}
+
+async function loadRealData(){
+  const base = exportBaseUrl();
+  let manifest;
+  try{
+    const res = await fetch(base + 'manifest.json');
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    manifest = await res.json();
+  } catch(err){
+    document.getElementById('provenanceBadge').textContent = 'NO DATA';
+    const centerPanelEl = document.getElementById('center-panel');
+    ctx.fillStyle='rgba(244,63,94,0.9)'; ctx.font='13px Inter, sans-serif';
+    ctx.fillText('Failed to load manifest.json: '+err.message, 20, 30);
+    ctx.font='11px Inter, sans-serif'; ctx.fillStyle='rgba(148,163,184,0.8)';
+    ctx.fillText('Run export_web_dashboard_data.py, serve this directory with', 20, 52);
+    ctx.fillText('"python -m http.server", and open via http://, not file://.', 20, 70);
+    return;
+  }
+
+  state.manifest = manifest;
+  const framePromises = manifest.frame_files.map(f => fetch(base+f).then(r=>r.json()));
+  state.frames = await Promise.all(framePromises);
+  state.frameIdx = 0;
+
+  document.getElementById('simBadge').innerHTML = '<span class="dot"></span>REAL DATA — '+manifest.provenance.toUpperCase();
+  renderFrame();
+  if(!state.paused) startPlayback();
+}
+
+resizeCanvas();
+requestAnimationFrame(redrawLoop);
+loadRealData();
+
+})();
+</script>
+</body>
+</html>

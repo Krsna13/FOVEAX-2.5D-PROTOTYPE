@@ -1,0 +1,49 @@
+{
+  "dataset": "rellis3d",
+  "sequence": "00000",
+  "predictor": "ground_truth",
+  "provenance": "ground_truth_rellis3d",
+  "num_frames": 8,
+  "frame_files": [
+    "frame_0000.json",
+    "frame_0001.json",
+    "frame_0002.json",
+    "frame_0003.json",
+    "frame_0004.json",
+    "frame_0005.json",
+    "frame_0006.json",
+    "frame_0007.json"
+  ],
+  "grid": {
+    "rows": 150,
+    "cols": 150,
+    "extent_m": [
+      -100.0,
+      100.0,
+      -100.0,
+      100.0
+    ]
+  },
+  "resolution_zones": [
+    {
+      "name": "Near",
+      "r_min": 0.0,
+      "r_max": 15.0,
+      "resolution_m": 0.05
+    },
+    {
+      "name": "Middle",
+      "r_min": 15.0,
+      "r_max": 35.0,
+      "resolution_m": 0.2
+    },
+    {
+      "name": "Far",
+      "r_min": 35.0,
+      "r_max": 100.0,
+      "resolution_m": 0.5
+    }
+  ],
+  "canonical_traversability_convention": "1.0 = safe, 0.0 = blocked. Safe >= 0.70, Caution 0.40-0.70, Blocked < 0.40 (src/06_terrain_traversability.py). Hazard-cluster severity sub-tiers the Blocked band: Critical < 0.2, Caution 0.2-0.4.",
+  "generated_at": "2026-09-11T10:11:48Z"
+}

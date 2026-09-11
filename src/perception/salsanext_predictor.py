@@ -14,6 +14,7 @@ from pathlib import Path
 import numpy as np
 
 from src.perception.semantic_labels import (
+    FOVEAX_CLASSES,
     NUM_FOVEAX_CLASSES,
     SEMANTICKITTI_TO_FOVEAX,
 )
@@ -152,8 +153,15 @@ class SalsaNextPredictor(SemanticPredictor):
         if modules_str not in sys.path:
             sys.path.insert(0, modules_str)
 
-        # Python 3.12+ removed the deprecated 'imp' module from stdlib.
-        # SalsaNext.py has an unused 'import imp' line; shim it to importlib.
+        # NOT required under this project's actual pinned interpreter
+        # (Python 3.11.16, confirmed 2026-09-11: `import imp` resolves
+        # natively there, real stdlib module, no shim needed -- verified via
+        # a raw import with no shim present, which succeeded cleanly).
+        # 'imp' was only removed from stdlib in Python 3.12+; SalsaNext.py
+        # has an unused 'import imp' line that fails under 3.12+. Kept
+        # purely as defensive forward-compatibility in case this ever runs
+        # under a newer interpreter -- it is a no-op on 3.11.16 since 'imp'
+        # is already importable and this branch never fires.
         if "imp" not in sys.modules:
             import importlib
             sys.modules["imp"] = importlib
@@ -336,11 +344,21 @@ class SalsaNextPredictor(SemanticPredictor):
         point_confidence[unknown] = 0.0
         point_uncertainty[unknown] = 1.0
 
+        # Calculate mean confidence per predicted class
+        class_confidence = {}
+        for cid, cname in FOVEAX_CLASSES.items():
+            cmask = class_ids == cid
+            if cmask.any():
+                class_confidence[cname] = round(
+                    float(point_confidence[cmask].mean()), 3
+                )
+
         prediction = SemanticPrediction(
             class_ids=class_ids,
             confidence=np.clip(point_confidence, 0.0, 1.0).astype(np.float32),
             uncertainty=np.clip(point_uncertainty, 0.0, 1.0).astype(np.float32),
             source="salsanext_pretrained",
+            class_confidence=class_confidence,
         )
         validate_prediction(prediction, num_points)
         return prediction

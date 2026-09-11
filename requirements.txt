@@ -13,14 +13,19 @@ torch==2.14.0+cu130
 torchvision==0.29.0+cu130
 
 # Core Scientific Computing & 3D Geometry
-numpy==2.5.2
-scipy==1.18.1
-open3d==0.18.0
+numpy==2.4.6
+scipy==1.17.1
+open3d==0.19.0
 opencv-python==5.0.0.93
 matplotlib==3.11.1
 
 # GUI Dashboard & Visualization
-PyQt5==5.15.10
+PyQt5==5.15.11
+
+# Windows-only: embeds the Open3D window as a panel inside the main
+# dashboard window (src/dashboard/win32_embed.py). Optional -- its absence
+# is handled as a graceful fallback to two separate windows, not a crash.
+pywin32==312; sys_platform == "win32"
 
 # Utilities, Configs & Telemetry
 PyYAML==6.0.3

@@ -143,10 +143,34 @@ class FoveaX3DViewer:
     def destroy(self):
         self.vis.destroy_window()
 
-def run_open3d_process(queue):
-    """Standalone process function to run Open3D."""
-    viewer = FoveaX3DViewer()
-    
+def run_open3d_process(queue, ready_queue=None, window_name: str = "FOVEAX Phase 9 - 3D Dashboard"):
+    """Standalone process function to run Open3D.
+
+    If ready_queue is given, this attempts to locate this process's own
+    Open3D window by title (via win32gui) once it's created, and puts its
+    HWND onto ready_queue so the parent process can reparent it into the
+    Qt window (see src/dashboard/win32_embed.py). Puts None if win32gui
+    isn't available or the window can't be located after retrying -- the
+    parent treats that as "run as a normal free-floating window" (the
+    original, unchanged behavior). This does not change anything about how
+    the Open3D render loop itself runs below.
+    """
+    viewer = FoveaX3DViewer(window_name=window_name)
+
+    if ready_queue is not None:
+        hwnd = None
+        try:
+            from src.dashboard.win32_embed import find_window_by_title
+            import time as _time
+            for _ in range(50):  # up to ~5s at 0.1s/try
+                hwnd = find_window_by_title(window_name)
+                if hwnd:
+                    break
+                _time.sleep(0.1)
+        except Exception:
+            hwnd = None
+        ready_queue.put(hwnd)
+
     # We run our own event loop here
     while True:
         try:

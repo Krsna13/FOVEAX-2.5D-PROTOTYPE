@@ -76,24 +76,44 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def compute_metrics(gt_labels: np.ndarray, pred_labels: np.ndarray, mask: np.ndarray, bucket_name: str):
+def compute_metrics(
+    gt_labels: np.ndarray, pred_labels: np.ndarray, mask: np.ndarray, bucket_name: str
+) -> dict | None:
+    """Compute (and print) accuracy + confusion matrix for one distance bucket.
+
+    Ground-truth points labeled UNKNOWN (7, e.g. SemanticKITTI's own
+    "unlabeled"/"outlier" raw classes) are excluded before scoring -- there
+    is no real ground truth to compare a prediction against for those
+    points, so counting them as "wrong" would penalize the model for
+    disagreeing with an absent label. This matches SemanticKITTI's own
+    official benchmark convention of ignoring its "unlabeled" class.
+
+    Returns a plain dict (not a dataclass -- kept intentionally lightweight
+    since this is primarily a print-report tool) so callers/tests can
+    assert on the computed numbers directly instead of scraping stdout:
+        {"bucket_name", "n_points", "accuracy", "confusion"}
+    where confusion maps gt_class_id -> {pred_class_id: count}.
+    Returns None if there are no valid (non-UNKNOWN) ground-truth points in
+    this bucket.
+    """
     valid_mask = mask & (gt_labels != 7)  # Ignore UNKNOWN (7) in ground truth
-    n_points = valid_mask.sum()
+    n_points = int(valid_mask.sum())
     if n_points == 0:
         print(f"\n--- Bucket: {bucket_name} ---")
         print("No valid ground truth points in this bucket.")
-        return
+        return None
 
     gt = gt_labels[valid_mask]
     pred = pred_labels[valid_mask]
-    
+
     accuracy = (gt == pred).sum() / n_points
-    
+
     print(f"\n--- Bucket: {bucket_name} ---")
     print(f"Points evaluated: {n_points:,}")
     print(f"Accuracy: {accuracy * 100:.2f}%")
-    
+
     print("\nConfusion Matrix (Ground Truth -> Predicted):")
+    confusion: dict[int, dict[int, int]] = {}
     for gt_id in sorted(FOVEAX_CLASSES.keys()):
         if gt_id == 7:
             continue
@@ -101,17 +121,25 @@ def compute_metrics(gt_labels: np.ndarray, pred_labels: np.ndarray, mask: np.nda
         n_gt_class = gt_class_mask.sum()
         if n_gt_class == 0:
             continue
-            
+
         pred_for_gt = pred[gt_class_mask]
         print(f"  GT {FOVEAX_CLASSES[gt_id]:<15} (n={n_gt_class:>6,}):")
-        
+
         # Calculate distribution
         unique_preds, counts = np.unique(pred_for_gt, return_counts=True)
         pred_dist = sorted(zip(unique_preds, counts), key=lambda x: x[1], reverse=True)
-        
+
+        confusion[gt_id] = {int(p_id): int(count) for p_id, count in pred_dist}
         for p_id, count in pred_dist:
             pct = (count / n_gt_class) * 100
             print(f"    -> {FOVEAX_CLASSES[p_id]:<15}: {pct:>6.2f}% ({count:>6,})")
+
+    return {
+        "bucket_name": bucket_name,
+        "n_points": n_points,
+        "accuracy": float(accuracy),
+        "confusion": confusion,
+    }
 
 
 def main(argv: list[str] | None = None) -> None:

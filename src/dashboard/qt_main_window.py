@@ -1,44 +1,97 @@
 import numpy as np
 import matplotlib as mpl
 from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QComboBox, QGroupBox, QListWidget, QProgressBar
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QImage, QPixmap
 from src.dashboard.dashboard_state import FrameState
+from src.dashboard.win32_embed import resize_child
+
+
+class Open3DEmbedWidget(QWidget):
+    """Placeholder panel that hosts the reparented Open3D native window.
+
+    This widget itself draws nothing -- it exists only to (a) provide a
+    real native HWND for src/13_realtime_dashboard.py to reparent the
+    Open3D child process's window into, and (b) forward Qt resize events
+    to that reparented window via win32gui.MoveWindow, since a foreign
+    HWND does not automatically follow its new Qt "parent" widget's size.
+
+    `child_hwnd` is set externally once the reparenting handshake in
+    DashboardApplication succeeds; until then (or if it never succeeds,
+    see the fallback path there) this is just an empty black panel and the
+    Open3D window shows separately, exactly as before this feature existed.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.child_hwnd = None
+        # Forces Qt to back this widget with a real native window (HWND) up
+        # front, rather than the "alien widget" optimization Qt normally
+        # uses for plain child widgets on Windows -- SetParent needs a real
+        # HWND to attach to.
+        self.setAttribute(Qt.WA_NativeWindow, True)
+        self.setStyleSheet("background-color: black;")
+        self.setMinimumSize(300, 300)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.child_hwnd:
+            resize_child(self.child_hwnd, self.width(), self.height())
+
 
 class FoveaXDashboardWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, embed_3d: bool = False):
         super().__init__()
         self.setWindowTitle("FOVEAX Phase 9 - 2D & Metrics Dashboard")
         self.resize(1000, 800)
-        
+
         self.current_map_type = "elevation"
+        self.embed_3d = embed_3d
+        self.embed_widget = None
         self._init_ui()
 
     def _init_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        
+
         main_layout = QHBoxLayout(central_widget)
-        
+
+        # When embedding the Open3D view, it takes the left ~55% and
+        # everything below (the original 2D map / metrics / tracks layout,
+        # completely unchanged internally) is nested into the remaining
+        # ~45% on the right. When embed_3d is False (pywin32 unavailable,
+        # or the caller opted out), `existing_layout` is added directly at
+        # stretch=1, which is visually and behaviorally identical to the
+        # original single-QHBoxLayout window -- nothing about the 2D/
+        # metrics/tracks panels changes in that path.
+        if self.embed_3d:
+            self.embed_widget = Open3DEmbedWidget()
+            main_layout.addWidget(self.embed_widget, stretch=55)
+            existing_stretch = 45
+        else:
+            existing_stretch = 1
+
+        existing_layout = QHBoxLayout()
+
         # --- LEFT PANEL: 2D View ---
         left_panel = QVBoxLayout()
-        
+
         self.map_selector = QComboBox()
         self.map_selector.addItems(["elevation", "traversability", "roi"])
         self.map_selector.currentTextChanged.connect(self._on_map_changed)
         left_panel.addWidget(self.map_selector)
-        
+
         self.map_label = QLabel("Waiting for data...")
         self.map_label.setAlignment(Qt.AlignCenter)
         self.map_label.setMinimumSize(600, 600)
         self.map_label.setStyleSheet("background-color: black; color: white;")
         left_panel.addWidget(self.map_label)
-        
-        main_layout.addLayout(left_panel, stretch=2)
-        
+
+        existing_layout.addLayout(left_panel, stretch=2)
+
         # --- RIGHT PANEL: Metrics & Stats ---
         right_panel = QVBoxLayout()
         
@@ -90,8 +143,10 @@ class FoveaXDashboardWindow(QMainWindow):
         tracks_group.setLayout(tracks_layout)
         
         right_panel.addWidget(tracks_group, stretch=1)
-        
-        main_layout.addLayout(right_panel, stretch=1)
+
+        existing_layout.addLayout(right_panel, stretch=1)
+
+        main_layout.addLayout(existing_layout, stretch=existing_stretch)
 
     def _on_map_changed(self, text):
         self.current_map_type = text
