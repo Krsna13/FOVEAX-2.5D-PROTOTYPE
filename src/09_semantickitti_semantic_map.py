@@ -14,69 +14,16 @@ class GridConfig:
     resolution: float = 0.20
 
 
-FOVEAX_CLASSES = {
-    0: "DRIVABLE_GROUND",
-    1: "ROUGH_TERRAIN",
-    2: "VEGETATION",
-    3: "BUILDING_WALL",
-    4: "SOLID_OBSTACLE",
-    5: "VEHICLE",
-    6: "PEDESTRIAN",
-    7: "UNKNOWN",
-}
+import sys
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
-FOVEAX_COLORS = np.array(
-    [
-        [46, 204, 113],   # 0 Drivable ground: green
-        [241, 196, 15],   # 1 Rough terrain: yellow
-        [39, 174, 96],    # 2 Vegetation: dark green
-        [142, 68, 173],   # 3 Building/wall: purple
-        [231, 76, 60],    # 4 Solid obstacle: red
-        [52, 152, 219],   # 5 Vehicle: blue
-        [26, 188, 156],   # 6 Pedestrian: cyan
-        [108, 117, 125],  # 7 Unknown: grey
-    ],
-    dtype=np.uint8
+from src.perception.semantic_labels import (
+    FOVEAX_CLASSES,
+    FOVEAX_COLORS,
+    SEMANTICKITTI_TO_FOVEAX,
 )
-
-# Raw SemanticKITTI class ID → simplified FOVEAX class ID.
-# Includes static and moving variants where applicable.
-SEMANTICKITTI_TO_FOVEAX = {
-    0:   7,   # unlabeled
-    1:   7,   # outlier
-    10:  5,   # car
-    11:  5,   # bicycle
-    13:  5,   # bus
-    15:  5,   # motorcycle
-    16:  5,   # on-rails
-    18:  5,   # truck
-    20:  5,   # other-vehicle
-    30:  6,   # person
-    31:  6,   # bicyclist
-    32:  6,   # motorcyclist
-    40:  0,   # road
-    44:  0,   # parking
-    48:  0,   # sidewalk
-    49:  1,   # other-ground
-    50:  3,   # building
-    51:  3,   # fence
-    52:  2,   # other-structure
-    60:  0,   # lane-marking  ← corrected to DRIVABLE_GROUND
-    70:  2,   # vegetation
-    71:  2,   # trunk
-    72:  1,   # terrain
-    80:  4,   # pole
-    81:  4,   # traffic-sign
-    99:  4,   # other-object
-    252: 5,   # moving-car
-    253: 5,   # moving-bicyclist
-    254: 6,   # moving-person
-    255: 6,   # moving-motorcyclist
-    256: 5,   # moving-on-rails
-    257: 5,   # moving-bus
-    258: 5,   # moving-truck
-    259: 5,   # moving-other-vehicle
-}
 
 
 def load_semantickitti_scan(
