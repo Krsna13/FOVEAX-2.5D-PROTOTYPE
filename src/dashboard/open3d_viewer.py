@@ -161,9 +161,14 @@ def run_open3d_process(queue, ready_queue=None, window_name: str = "FOVEAX Phase
         hwnd = None
         try:
             from src.dashboard.win32_embed import find_window_by_title
+            import os
             import time as _time
+            own_pid = os.getpid()
             for _ in range(50):  # up to ~5s at 0.1s/try
-                hwnd = find_window_by_title(window_name)
+                # own_pid guards against matching a same-titled Open3D
+                # window from a different, concurrently running instance
+                # of this dashboard -- FindWindow searches system-wide.
+                hwnd = find_window_by_title(window_name, owner_pid=own_pid)
                 if hwnd:
                     break
                 _time.sleep(0.1)

@@ -17,18 +17,37 @@ from __future__ import annotations
 try:
     import win32con
     import win32gui
+    import win32process
 
     WIN32_AVAILABLE = True
 except ImportError:
     WIN32_AVAILABLE = False
 
 
-def find_window_by_title(title: str) -> int | None:
-    """Find a top-level window's HWND by exact title match, or None."""
+def find_window_by_title(title: str, owner_pid: int | None = None) -> int | None:
+    """Find a top-level window's HWND by exact title match, or None.
+
+    FindWindow searches ALL top-level windows system-wide, not just this
+    process's own -- if another process (e.g. a second, concurrently
+    running instance of this same dashboard) happens to have a window
+    with the identical title open at the same time, a bare title search
+    can match the wrong window. When owner_pid is given, the match is
+    rejected unless the found window actually belongs to that process
+    (verified via GetWindowThreadProcessId), and the search keeps looking
+    -- this was a real, observed failure mode during development (two
+    concurrent sessions each running their own Open3D window titled
+    "FOVEAX Phase 9 - 3D Dashboard").
+    """
     if not WIN32_AVAILABLE:
         return None
     hwnd = win32gui.FindWindow(None, title)
-    return hwnd if hwnd else None
+    if not hwnd:
+        return None
+    if owner_pid is not None:
+        _, found_pid = win32process.GetWindowThreadProcessId(hwnd)
+        if found_pid != owner_pid:
+            return None
+    return hwnd
 
 
 def reparent_as_child(child_hwnd: int, parent_hwnd: int, width: int, height: int) -> None:

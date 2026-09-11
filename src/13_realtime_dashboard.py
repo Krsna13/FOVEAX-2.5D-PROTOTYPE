@@ -175,15 +175,12 @@ class DashboardApplication:
             return
 
         try:
-            print("[DEBUG] child_hwnd received:", child_hwnd)
             embed_widget = self.qt_window.embed_widget
+            # Force real native window handles to exist before SetParent.
             self.qt_window.winId()
-            print("[DEBUG] qt_window winId ok, isVisible=", self.qt_window.isVisible())
             embed_widget.winId()
             parent_hwnd = int(embed_widget.winId())
-            print("[DEBUG] parent_hwnd=", parent_hwnd, "embed size=", embed_widget.width(), embed_widget.height())
             reparent_as_child(child_hwnd, parent_hwnd, embed_widget.width(), embed_widget.height())
-            print("[DEBUG] reparent_as_child returned OK, isVisible=", self.qt_window.isVisible())
             embed_widget.child_hwnd = child_hwnd
             self._embedded = True
             print("[INFO] Open3D 3D view embedded into the main dashboard window.")
@@ -192,22 +189,13 @@ class DashboardApplication:
                   "it will remain a separate floating window instead.")
 
     def run(self):
-        print("[DEBUG] before show()")
         self.qt_window.show()
-        print("[DEBUG] after show(), isVisible=", self.qt_window.isVisible())
         if self._attempt_embed:
             self._try_reparent()
-        print("[DEBUG] after reparent attempt, isVisible=", self.qt_window.isVisible(), "quitOnLastWindowClosed=", self.app.quitOnLastWindowClosed())
-        import os
-        if not os.environ.get("FOVEAX_DEBUG_SKIP_STREAMER"):
-            self.streamer.start()
-        else:
-            print("[DEBUG] SKIPPING streamer.start() for isolation test")
-        print("[DEBUG] entering exec_()")
+        self.streamer.start()
 
         # Start event loop
         exit_code = self.app.exec_()
-        print("[DEBUG] exec_() returned with code", exit_code)
 
         # Cleanup
         self.streamer.stop()
