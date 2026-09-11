@@ -1,1 +1,1 @@
-{"type": "summary", "data": {"preprocessing": {"mean_ms": 10.645400000157679, "min_ms": 10.645400000157679, "max_ms": 10.645400000157679, "std_ms": 0.0, "calls": 1}}, "peak_vram_mb": 254.1484375}
+{"type": "summary", "data": {"preprocessing": {"mean_ms": 10.254700000587036, "min_ms": 10.254700000587036, "max_ms": 10.254700000587036, "std_ms": 0.0, "calls": 1}}, "peak_vram_mb": 1088.5625}

@@ -54,17 +54,23 @@ def export_pytorch_to_onnx(
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    torch.onnx.export(
-        model,
-        dummy_input,
-        output_path,
-        export_params=True,
-        opset_version=opset_version,
-        do_constant_folding=True,
-        input_names=input_names,
-        output_names=output_names,
-        dynamic_axes=dynamic_axes
-    )
+    try:
+        torch.onnx.export(
+            model,
+            dummy_input,
+            output_path,
+            export_params=True,
+            opset_version=opset_version,
+            do_constant_folding=True,
+            input_names=input_names,
+            output_names=output_names,
+            dynamic_axes=dynamic_axes
+        )
+    except (ModuleNotFoundError, ImportError) as e:
+        raise RuntimeError(
+            f"ONNX export requires additional dependencies ('onnx' and 'onnxscript'): {e}. "
+            "Please run 'pip install onnx onnxscript' to enable ONNX model serialization."
+        ) from e
     
     print(f"[+] Successfully exported ONNX model to {output_path}")
     

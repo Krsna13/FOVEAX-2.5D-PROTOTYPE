@@ -1,6 +1,11 @@
 import argparse
 import sys
 from pathlib import Path
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 from src.deployment.deployment_config import get_profile
 from src.deployment.vram_budget import check_concurrent_fit, get_available_vram_mb
 from src.deployment.model_exporter import export_pytorch_to_onnx

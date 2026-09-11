@@ -2,12 +2,12 @@ FOVEAX Phase 11 Profiling Summary
 =================================
 
 [preprocessing]
-  Mean: 10.65 ms
-  Min : 10.65 ms
-  Max : 10.65 ms
+  Mean: 10.25 ms
+  Min : 10.25 ms
+  Max : 10.25 ms
   Std : 0.00 ms
   Runs: 1
 
 Memory
 ======
-  Peak VRAM Used: 254 MB (3.1% of 8151 MB)
+  Peak VRAM Used: 1089 MB (13.4% of 8151 MB)
