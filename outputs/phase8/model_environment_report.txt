@@ -1,0 +1,39 @@
+=== FOVEAX Phase 8B: Model Environment Inspection Report ===
+Python Version: 3.11.16
+PyTorch Version: Not installed
+CUDA Available: False
+CUDA Device Name: None
+Package 'numpy': Installed
+Package 'scipy': Installed
+OpenPCDet Repository: Missing
+
+=== Recommended Manual Actions ===
+1. Install PyTorch with CUDA support (check pytorch.org for your CUDA version).
+   e.g., pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+2. Clone OpenPCDet repository:
+   git clone https://github.com/open-mmlab/OpenPCDet.git external/OpenPCDet
+3. Install OpenPCDet dependencies:
+   cd external/OpenPCDet && pip install -r requirements.txt && pip install -e .
+4. Obtain an official PointPillars pretrained checkpoint and place it in models/openpcdet/
+
+======================================================================
+Run timestamp: 2026-09-10T11:42:07.217790
+======================================================================
+=== Runtime Benchmark Measurements ===
+Detector Architecture: MockObjectDetector
+Execution Device     : CPU
+Frames Evaluated     : 2
+Inference Latency    : mean=8.99 ms | min=8.78 ms | max=9.19 ms
+Throughput           : 111.28 FPS
+NOTE: Measured benchmark numbers only. No real-time capability claims made.
+
+======================================================================
+Run timestamp: 2026-09-10T11:42:14.601098
+======================================================================
+=== Runtime Benchmark Measurements ===
+Detector Architecture: MockObjectDetector
+Execution Device     : CPU
+Frames Evaluated     : 2
+Inference Latency    : mean=6.29 ms | min=5.86 ms | max=6.72 ms
+Throughput           : 158.98 FPS
+NOTE: Measured benchmark numbers only. No real-time capability claims made.
