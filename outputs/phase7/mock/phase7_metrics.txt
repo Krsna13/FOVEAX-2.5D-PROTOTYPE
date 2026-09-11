@@ -1,0 +1,27 @@
+============================================================
+FOVEAX Phase 7 — AI Semantic 2.5D Map Metrics
+============================================================
+Prediction source : mock_geometry_baseline
+
+  >>> [!] Source: MOCK geometry heuristic -- NOT AI inference
+
+Input points      : 124,668
+Points in ROI     : 62,702
+Grid shape        : (250, 250)
+Occupied cells    : 6,212
+
+Mean semantic confidence : 0.2394
+Mean semantic uncertainty: 0.7606
+Mean map confidence      : 0.3005
+
+Class distribution (points):
+  DRIVABLE_GROUND     :     42,855
+  ROUGH_TERRAIN       :          0
+  VEGETATION          :          0
+  BUILDING_WALL       :        292
+  SOLID_OBSTACLE      :     10,831
+  VEHICLE             :          0
+  PEDESTRIAN          :          0
+  UNKNOWN             :     70,690
+
+Output folder: outputs\phase7\mock

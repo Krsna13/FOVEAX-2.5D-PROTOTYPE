@@ -1,0 +1,14 @@
+Environment Report for FOVEAX Phase 7B
+
+Python Version: 3.11.16 (main, Sep  1 2026, 14:15:24) [MSC v.1944 64 bit (AMD64)]
+PyTorch Installed: No (ModuleNotFoundError: No module named 'torch')
+CUDA Available: Unknown (Requires PyTorch to detect)
+CUDA Device: Unknown
+
+Recommended PyTorch Installation Command:
+Since torch is missing, please install it in your virtual environment according to your CUDA version.
+For CUDA 12.1 (common for modern GPUs), run:
+.\.venv\Scripts\python.exe -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+If you do not have an NVIDIA GPU, install the CPU-only version:
+.\.venv\Scripts\python.exe -m pip install torch torchvision torchaudio

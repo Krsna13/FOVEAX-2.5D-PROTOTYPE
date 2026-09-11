@@ -1,0 +1,27 @@
+============================================================
+FOVEAX Phase 7 — AI Semantic 2.5D Map Metrics
+============================================================
+Prediction source : rellis3d_ground_truth
+
+  >>> Source: RELLIS-3D GROUND-TRUTH labels (not AI predictions)
+
+Input points      : 131,072
+Points in ROI     : 87,728
+Grid shape        : (250, 250)
+Occupied cells    : 4,203
+
+Mean semantic confidence : 0.9928
+Mean semantic uncertainty: 0.0072
+Mean map confidence      : 0.6115
+
+Class distribution (points):
+  DRIVABLE_GROUND     :     16,255
+  ROUGH_TERRAIN       :     22,317
+  VEGETATION          :     56,877
+  BUILDING_WALL       :          0
+  SOLID_OBSTACLE      :         34
+  VEHICLE             :          0
+  PEDESTRIAN          :     35,589
+  UNKNOWN             :          0
+
+Output folder: outputs\phase7\rellis3d\00000_000000_ground_truth
