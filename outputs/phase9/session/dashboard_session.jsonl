@@ -17557,3 +17557,5 @@
 {"schema_version": "1.0", "frame_idx": 774, "timestamp_s": 55.285714285714285, "num_points": 131072, "num_tracks": 41, "fps": 14.0, "target_fps": 14.0, "achieved_fps": 14.0, "latency_ms": 197.00039999997898, "cpu_percent": 20.4}
 {"schema_version": "1.0", "frame_idx": 775, "timestamp_s": 55.357142857142854, "num_points": 131072, "num_tracks": 39, "fps": 14.0, "target_fps": 14.0, "achieved_fps": 14.0, "latency_ms": 192.73979999996982, "cpu_percent": 18.5}
 {"schema_version": "1.0", "frame_idx": 776, "timestamp_s": 55.42857142857143, "num_points": 131072, "num_tracks": 40, "fps": 14.0, "target_fps": 14.0, "achieved_fps": 14.0, "latency_ms": 186.05330000002596, "cpu_percent": 42.2}
+{"schema_version": "1.0", "frame_idx": 0, "timestamp_s": 0.0, "num_points": 2150, "num_tracks": 1, "fps": 14.0, "target_fps": 14.0, "achieved_fps": 14.0, "latency_ms": 501.10079999990376, "cpu_percent": 13.8}
+{"schema_version": "1.0", "frame_idx": 1, "timestamp_s": 0.07142857142857142, "num_points": 2150, "num_tracks": 1, "fps": 14.0, "target_fps": 14.0, "achieved_fps": 14.0, "latency_ms": 4.252400000041234, "cpu_percent": 100.0}
