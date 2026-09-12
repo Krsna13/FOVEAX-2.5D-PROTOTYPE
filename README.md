@@ -2,6 +2,9 @@
 
 A deterministic, high-performance LiDAR perception and 2.5D adaptive elevation grid mapping pipeline designed for autonomous navigation and off-road/trail terrain understanding without requiring heavy end-to-end models in the real-time path.
 
+🌐 **Live Interactive Web GUI**: [https://krsna13.github.io/FOVEAX-2.5D-PROTOTYPE/](https://krsna13.github.io/FOVEAX-2.5D-PROTOTYPE/)  
+🖥️ **Desktop Real-Time GUI**: `python src/13_realtime_dashboard.py`
+
 ---
 
 ## Overview
@@ -204,8 +207,12 @@ python src/11_object_detection_tracking.py --source sample --detector mock --fra
 # Run Phase 8: 3D Object Detection & Tracking (SemanticKITTI)
 python src/11_object_detection_tracking.py --source semantickitti --sequence 00 --start-frame 000000 --frames 5
 
-# Run Phase 9: Real-Time Dashboard (Interactive GUI)
+# Run Phase 9: Real-Time Dashboard (Interactive PyQt5 + Open3D GUI)
 python src/13_realtime_dashboard.py --source semantickitti --frames 50
+
+# Run Phase 9: Web GUI Dashboard (ASTRAFOVEA browser interface)
+python -m http.server 8000 -d outputs/phase9/web_export
+# Then open: http://localhost:8000/index.html (or http://localhost:8000/astrafovea.html)
 
 # Run Phase 9: Headless Replay & Telemetry Logging (SemanticKITTI or RELLIS-3D)
 python src/13_realtime_dashboard.py --source semantickitti --frames 10 --headless
