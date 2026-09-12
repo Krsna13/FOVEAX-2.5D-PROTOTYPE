@@ -50,6 +50,55 @@ class FrameState:
     # assert_coordinate_frame_consistency(). Empty when the frame is consistent.
     coordinate_warnings: list[str] = field(default_factory=list)
 
+    # Real-data dashboard features (Task: PyQt5 restyle).
+    # Ego-forward drivable corridor width, computed from contiguous
+    # traversability>=0.70 (canonical Safe) cells at the ego's row. None
+    # when no safe cell exists under the ego column (nothing to measure).
+    road_width_m: float | None = None
+
+    # Real elevation profile along the ego-forward centerline (x nearest 0):
+    # list of (y_m, z_max) sampled from the real elevation grid.
+    elevation_profile: list[tuple[float, float]] = field(default_factory=list)
+
+    # y-positions (m) along that same centerline where traversability<0.40
+    # (canonical Blocked) -- real hazard markers, not scripted.
+    elevation_hazards_m: list[float] = field(default_factory=list)
+
+    # Connected-component hazard clusters from the real traversability grid
+    # (scipy.ndimage.label), same method as
+    # src/dashboard/export_web_dashboard_data.py::find_hazard_clusters.
+    hazard_clusters: list[dict] = field(default_factory=list)
+
+    # Real Phase 5 (src/08_spatial_importance_roi.py) observation-uncertainty
+    # summary, computed with the identical formula on the live local grid:
+    # uncertainty = 1 - clip(log1p(point_count)/log(8), 0, 1); unoccupied=1.0.
+    mean_uncertainty: float | None = None
+    occupied_fraction: float | None = None
+
+    # Real forward-corridor cross-section (src/perception/centerline_profile.py):
+    # one dict per distance bin (distance_m, height_above_baseline_m,
+    # depth_below_baseline_m, point_count) -- a gap (no real data) has
+    # height/depth = None and point_count = 0, never an interpolated guess.
+    centerline_profile: list[dict] = field(default_factory=list)
+
+    # Real hazards/tracked objects whose position falls inside the same
+    # forward corridor, each carrying the SAME distance_m already shown
+    # elsewhere in the dashboard (hazard table / tracked-objects panel)
+    # for that object -- reused verbatim, not re-derived.
+    centerline_markers: list[dict] = field(default_factory=list)
+
+    # Real distance-bucketed accuracy, computed by the SAME
+    # src/10b_eval_distance_metrics.py::compute_metrics() used by the
+    # already-validated offline evaluation -- never reimplemented here.
+    # None when this frame has no real ground truth to compare against
+    # (has_ground_truth=False); otherwise a dict with keys
+    # "near"/"mid"/"far"/"overall", each compute_metrics()'s own return
+    # value (a dict with n_points/accuracy/confusion, or None if that
+    # bucket had zero valid ground-truth points).
+    has_ground_truth: bool = False
+    predictor_mode: str = "ground_truth"
+    accuracy_metrics: dict | None = None
+
 
 def assert_coordinate_frame_consistency(frame_state: "FrameState") -> list[str]:
     """

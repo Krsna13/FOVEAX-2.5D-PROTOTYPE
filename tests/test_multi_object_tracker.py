@@ -30,6 +30,8 @@ from src.tracking.multi_object_tracker import (
     _build_process_noise_covariance,
     _build_measurement_noise_covariance,
     _class_compatible,
+    _class_can_be_dynamic,
+    _STATIC_ONLY_CLASSES,
 )
 
 
@@ -1116,3 +1118,112 @@ class TestTrackerSpecRequirements:
             basic_tracker.update([vehicle_detection], timestamp_s=float(i))
         for t in basic_tracker.tracks:
             assert 0.0 <= t.confidence <= 1.0
+
+
+class TestClassGatedDynamicFlag:
+    """Regression guard for a real false-positive "Dynamic VEGETATION" bug
+    that reappeared at scale (200+ real RELLIS-3D frames), root-caused as
+    uncompensated real ego motion (this pipeline has no odometry) rather
+    than Kalman-convergence noise, a residual AABB-centroid bug, or track
+    churn -- confirmed by a track with 198/200 real hits (thoroughly
+    Kalman-converged) still showing sustained ~1.1-1.3 m/s "motion".
+
+    Since real ego-motion compensation is out of scope for this fix, the
+    "Dynamic" flag is instead gated by real-world class semantics: classes
+    that cannot physically move (vegetation, terrain, structures) must
+    never be reported Dynamic, regardless of the underlying numeric
+    contamination source or how long the run is.
+    """
+
+    def test_static_only_classes_never_flagged_dynamic_over_a_long_run(self) -> None:
+        """A genuinely static real-world-immobile-class cluster, drifting
+        the way an uncompensated ego motion would make it appear to (a
+        real, sustained, non-noisy linear drift -- not just jitter),
+        must NEVER be flagged Dynamic, no matter how long the run is."""
+        tracker = MultiObjectTracker()
+        n_frames = 150
+        dt = 0.1
+
+        for i in range(n_frames):
+            # A sustained, non-decaying drift emulating uncompensated ego
+            # motion sweeping a real static object through the sensor
+            # frame -- the exact failure pattern found on real data.
+            det = Detection3D(
+                center_xyz=np.array([-5.0 + 0.1 * i, 10.0, 0.8], dtype=np.float32),
+                size_lwh=np.array([1.0, 1.0, 1.0], dtype=np.float32),
+                yaw_rad=0.0,
+                class_id=2,
+                class_name="VEGETATION",
+                confidence=0.9,
+                source="mock",
+            )
+            tracker.update([det], timestamp_s=i * dt)
+
+        tracks = tracker.tracks
+        assert len(tracks) == 1
+        track = tracks[0]
+        # Sanity: the underlying speed estimate IS real and nonzero (the
+        # drift is real) -- what must be suppressed is only the boolean
+        # "Dynamic" judgment for this physically-immobile class.
+        speed = float(np.linalg.norm(track.state[3:6]))
+        assert speed > 0.5, "test setup didn't actually create apparent motion"
+        assert bool(track.dynamic) is False
+        assert track.hits >= 100  # ran the full long window, thoroughly converged
+
+    def test_vehicle_class_still_correctly_flagged_dynamic(self) -> None:
+        """A genuinely mobile real-world class must still be correctly
+        flagged Dynamic when it's actually moving -- the class gate must
+        not suppress real motion for classes that can move."""
+        tracker = MultiObjectTracker()
+        n_frames = 20
+        dt = 0.1
+
+        for i in range(n_frames):
+            det = Detection3D(
+                center_xyz=np.array([0.5 * i, 0.0, 0.5], dtype=np.float32),
+                size_lwh=np.array([4.0, 1.8, 1.5], dtype=np.float32),
+                yaw_rad=0.0,
+                class_id=5,
+                class_name="VEHICLE",
+                confidence=0.9,
+                source="mock",
+            )
+            tracker.update([det], timestamp_s=i * dt)
+
+        tracks = tracker.tracks
+        assert len(tracks) == 1
+        assert bool(tracks[0].dynamic) is True
+
+    def test_class_can_be_dynamic_matches_static_only_set(self) -> None:
+        for cls in _STATIC_ONLY_CLASSES:
+            assert _class_can_be_dynamic(cls) is False
+        for cls in ["VEHICLE", "PEDESTRIAN", "unknown_obstacle", "unclassified", "UNKNOWN"]:
+            assert _class_can_be_dynamic(cls) is True
+
+    def test_dynamic_flag_cleared_immediately_when_class_upgraded_to_static(self) -> None:
+        """A track flagged Dynamic while its real class was still unknown
+        must have the flag cleared the moment real semantic information
+        upgrades it to a known-static class."""
+        tracker = MultiObjectTracker()
+
+        # Frames 0-4: unclassified, moving -- eligible, becomes Dynamic.
+        for i in range(5):
+            det = Detection3D(
+                center_xyz=np.array([0.5 * i, 0.0, 0.5], dtype=np.float32),
+                size_lwh=np.array([1.0, 1.0, 1.0], dtype=np.float32),
+                yaw_rad=0.0, class_id=7, class_name="unclassified",
+                confidence=0.9, source="mock",
+            )
+            tracker.update([det], timestamp_s=i * 0.1)
+        assert bool(tracker.tracks[0].dynamic) is True
+
+        # Frame 5: real semantic info arrives -- it's actually vegetation.
+        det = Detection3D(
+            center_xyz=np.array([2.5, 0.0, 0.5], dtype=np.float32),
+            size_lwh=np.array([1.0, 1.0, 1.0], dtype=np.float32),
+            yaw_rad=0.0, class_id=2, class_name="VEGETATION",
+            confidence=0.9, source="mock",
+        )
+        tracker.update([det], timestamp_s=5 * 0.1)
+        assert tracker.tracks[0].class_name == "VEGETATION"
+        assert bool(tracker.tracks[0].dynamic) is False

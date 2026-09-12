@@ -395,6 +395,14 @@ def export_frames(args: argparse.Namespace) -> Path:
                 class_confidence = prediction.class_confidence
 
         detections = detector.detect(points, timestamp_s=float(i))
+        from src.perception.object_detector import classify_cluster_from_semantics
+        for d in detections:
+            if d.class_name == "unknown_obstacle":
+                cid, cname = classify_cluster_from_semantics(
+                    d.center_xyz, d.size_lwh, points, class_ids, fallback_class="unclassified"
+                )
+                d.class_id = cid
+                d.class_name = cname
         tracks = tracker.update(detections, timestamp_s=float(i))
 
         grid = build_grids(points, class_ids)

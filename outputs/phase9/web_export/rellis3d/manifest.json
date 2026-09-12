@@ -45,5 +45,5 @@
     }
   ],
   "canonical_traversability_convention": "1.0 = safe, 0.0 = blocked. Safe >= 0.70, Caution 0.40-0.70, Blocked < 0.40 (src/06_terrain_traversability.py). Hazard-cluster severity sub-tiers the Blocked band: Critical < 0.2, Caution 0.2-0.4.",
-  "generated_at": "2026-09-11T10:11:48Z"
+  "generated_at": "2026-09-11T20:06:10Z"
 }

@@ -39,6 +39,43 @@ _TRACKER_DEFAULTS = {
     "matching_class_compatible": True,  # only match same class name
 }
 
+# Real-world classes that are physically incapable of independent motion --
+# never eligible for the "Dynamic" flag regardless of measured speed.
+#
+# Root-caused (long-playback investigation, 200+ real RELLIS-3D frames):
+# this pipeline has no ego-motion compensation (no odometry -- see
+# src/perception/ego_motion_estimate.py's module docstring). Over a long
+# real playback the vehicle's own real motion (translation and/or
+# rotation) is significant, and every real static object's raw detection
+# position drifts through the ego-relative sensor frame as a direct,
+# sustained, non-noisy side effect -- confirmed by tracing a track with
+# 198 hits across 200 frames (thoroughly Kalman-converged, not early-frame
+# noise) still showing sustained ~1.1-1.3 m/s "motion", and by an
+# independent real ICP displacement measurement confirming nonzero real
+# ego motion over the same window. This is NOT the earlier AABB-centroid
+# bug (already fixed and independently reverified here) and NOT primarily
+# Kalman-convergence noise (a min-hits threshold would not fix a
+# 198-hit track) or excessive track churn (this happens on long-lived
+# tracks too).
+#
+# Full ego-motion compensation (real SLAM/odometry) is out of scope for
+# this fix. Instead: real-world domain knowledge says vegetation,
+# man-made structures, and terrain surfaces cannot move at 1+ m/s (wind-
+# blown vegetation sway is on the order of cm/s), so the "Dynamic"
+# classification is suppressed for these classes regardless of the
+# underlying numeric contamination source. Genuinely mobile real classes
+# (VEHICLE, PEDESTRIAN) and unclassified/wildcard detections (where the
+# real class is unknown, so motion can't be ruled out) remain eligible.
+_STATIC_ONLY_CLASSES = frozenset({
+    "DRIVABLE_GROUND", "ROUGH_TERRAIN", "VEGETATION", "BUILDING_WALL",
+    "SOLID_OBSTACLE",
+})
+
+
+def _class_can_be_dynamic(class_name: str) -> bool:
+    """True unless class_name is a real-world class that cannot move."""
+    return class_name not in _STATIC_ONLY_CLASSES
+
 
 # ---------------------------------------------------------------------------
 # TrackState
@@ -297,10 +334,11 @@ def _class_compatible(a: str, b: str, compatible: bool) -> bool:
     """Check whether two class names are compatible for matching."""
     if not compatible:
         return True
-    # Same class OR one of them is "unknown_obstacle" (the mock detector class).
+    # Same class OR one of them is an unclassified / mock wildcard.
     if a == b:
         return True
-    if a == "unknown_obstacle" or b == "unknown_obstacle":
+    wildcards = {"unknown_obstacle", "unclassified", "UNKNOWN"}
+    if a in wildcards or b in wildcards:
         return True
     return False
 
@@ -717,10 +755,21 @@ class MultiObjectTracker:
             )
             track.source = det.source
 
-            # Dynamic flag: only after enough observations.
-            if track.hits >= self.min_hits_for_dynamic:
+            # Upgrade class_name if track was unclassified or det has a more specific class.
+            wildcards = {"unknown_obstacle", "unclassified", "UNKNOWN"}
+            if det.class_name not in wildcards:
+                track.class_name = det.class_name
+            elif track.class_name in wildcards and det.class_name:
+                track.class_name = det.class_name
+
+            # Dynamic flag: only after enough observations, and only for
+            # classes physically capable of independent motion (see
+            # _STATIC_ONLY_CLASSES).
+            if track.hits >= self.min_hits_for_dynamic and _class_can_be_dynamic(track.class_name):
                 speed = np.linalg.norm(track.state[3:6])
                 track.dynamic = speed >= self.dynamic_speed_threshold_mps
+            else:
+                track.dynamic = False
 
             # Reset missed counter on a successful match.
             track.missed_frames = 0
@@ -738,8 +787,9 @@ class MultiObjectTracker:
                 max_missed_frames=self.max_missed_frames,
             )
             # Re-evaluate dynamic: if speed is still high and we have
-            # observations, keep the flag.  Otherwise clear it.
-            if track.hits >= self.min_hits_for_dynamic:
+            # observations, keep the flag.  Otherwise clear it. Never
+            # eligible for classes physically incapable of motion.
+            if track.hits >= self.min_hits_for_dynamic and _class_can_be_dynamic(track.class_name):
                 speed = np.linalg.norm(track.state[3:6])
                 track.dynamic = speed >= self.dynamic_speed_threshold_mps
             else:

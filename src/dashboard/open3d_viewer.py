@@ -28,6 +28,39 @@ class FoveaX3DViewer:
         self.axis = o3d.geometry.TriangleMesh.create_coordinate_frame(size=2.0, origin=[0, 0, 0])
         self.vis.add_geometry(self.axis)
 
+        self.view_control = self.vis.get_view_control()
+
+    def handle_camera_command(self, cmd: str) -> None:
+        """Apply a real camera command to this Open3D view, issued by the
+        Qt dashboard's left-panel controls (zoom/rotate/reset/view-mode).
+
+        This directly drives Open3D's own ViewControl API -- it is not a
+        simulated or faked camera effect.
+        """
+        vc = self.view_control
+        if cmd == "zoom_in":
+            # ViewControl.scale(): negative shrinks the view distance
+            # (zooms in), matching Open3D's own mouse-wheel-forward handling.
+            vc.scale(-2.0)
+        elif cmd == "zoom_out":
+            vc.scale(2.0)
+        elif cmd == "rotate":
+            vc.rotate(200.0, 0.0)
+        elif cmd == "reset":
+            self.vis.reset_view_point(True)
+        elif cmd == "view_top":
+            vc.set_front([0.0, 0.0, 1.0])
+            vc.set_up([0.0, 1.0, 0.0])
+            vc.set_lookat([0.0, 0.0, 0.0])
+        elif cmd == "view_perspective":
+            vc.set_front([-0.5, -0.5, 0.5])
+            vc.set_up([0.0, 0.0, 1.0])
+            vc.set_lookat([0.0, 0.0, 0.0])
+        elif cmd == "view_side":
+            vc.set_front([1.0, 0.0, 0.0])
+            vc.set_up([0.0, 0.0, 1.0])
+            vc.set_lookat([0.0, 0.0, 0.0])
+
     def _create_box_lineset(self, size_lwh, center_xyz, yaw_rad, color):
         """Creates an Open3D LineSet representing an oriented 3D bounding box."""
         l, w, h = size_lwh
@@ -177,17 +210,28 @@ def run_open3d_process(queue, ready_queue=None, window_name: str = "FOVEAX Phase
         ready_queue.put(hwnd)
 
     # We run our own event loop here
+    quit_requested = False
     while True:
         try:
-            # Non-blocking get from queue
-            # To ensure we don't fall behind, we can drain the queue and take the latest state
+            # Drain the queue each tick: apply every real-time camera
+            # command as it arrives (never dropped), but only keep the
+            # most recent FrameState (older frames are stale and safe to
+            # skip -- this is unchanged from the original behavior).
             state = None
             while not queue.empty():
-                state = queue.get_nowait()
-                
-            if state is not None:
-                if state == "QUIT":
+                item = queue.get_nowait()
+                if isinstance(item, str) and item == "QUIT":
+                    quit_requested = True
                     break
+                elif isinstance(item, dict) and "cmd" in item:
+                    viewer.handle_camera_command(item["cmd"])
+                else:
+                    state = item
+
+            if quit_requested:
+                break
+
+            if state is not None:
                 viewer.update(state)
         except Exception as e:
             pass

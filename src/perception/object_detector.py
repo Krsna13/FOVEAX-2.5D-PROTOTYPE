@@ -129,6 +129,7 @@ class ObjectDetector(ABC):
         self,
         points_xyzi: np.ndarray,
         timestamp_s: float | None = None,
+        semantic_labels: np.ndarray | None = None,
     ) -> list[Detection3D]:
         """Detect 3D objects in a single LiDAR sweep.
 
@@ -218,7 +219,14 @@ _MOCK_DEFAULTS = {
 
 
 def _voxel_cluster_key(point: np.ndarray, voxel_size: float) -> tuple[int, int, int]:
-    """Voxel index tuple for a single 3-D point."""
+    """Voxel index tuple for a single 3-D point.
+
+    Kept for any external caller expecting a single-point key; the hot
+    path inside MockObjectDetector.detect() uses
+    _voxel_cluster_keys_vectorized() below instead (identical per-point
+    formula, computed for every point in one NumPy call rather than a
+    Python-level loop).
+    """
     return (
         int(np.floor(point[0] / voxel_size)),
         int(np.floor(point[1] / voxel_size)),
@@ -226,9 +234,94 @@ def _voxel_cluster_key(point: np.ndarray, voxel_size: float) -> tuple[int, int, 
     )
 
 
+def _voxel_cluster_keys_vectorized(xyz: np.ndarray, voxel_size: float) -> np.ndarray:
+    """Voxel index triples for every point in *xyz* in one vectorized call.
+
+    Row i of the result is exactly
+    _voxel_cluster_key(xyz[i], voxel_size) as a length-3 int64 array --
+    same floor-division formula, applied to the whole (N, 3) array at
+    once instead of once per point in a Python list comprehension.
+    """
+    return np.floor(xyz / voxel_size).astype(np.int64)
+
+
 def _deterministic_cluster_sort_key(d: Detection3D) -> tuple:
     """Sort key: confidence desc, class_name asc, center_x asc, center_y asc."""
     return (-d.confidence, d.class_name, d.center_xyz[0], d.center_xyz[1])
+
+
+def classify_cluster_from_semantics(
+    center_xyz: np.ndarray,
+    size_lwh: np.ndarray,
+    points_xyzi: np.ndarray,
+    semantic_labels: np.ndarray | None,
+    margin: float = 0.05,
+    fallback_class: str = "unclassified",
+) -> tuple[int, str]:
+    """Classify a 3D bounding box / cluster against per-point semantic labels.
+
+    Cross-references the cluster's 3D extent against the current frame's
+    semantic segmentation output by majority voting over points inside the box.
+
+    Parameters
+    ----------
+    center_xyz : np.ndarray, shape (3,)
+        Cluster centre [x, y, z] in metres.
+    size_lwh : np.ndarray, shape (3,)
+        Cluster dimensions [length, width, height] in metres.
+    points_xyzi : np.ndarray, shape (N, 4)
+        Full point cloud for the frame.
+    semantic_labels : np.ndarray, shape (N,), optional
+        Per-point FOVEAX class IDs (0..7). If None, empty, or only UNKNOWN,
+        returns (7, fallback_class).
+    margin : float
+        Spatial padding around the bounding box (metres).
+    fallback_class : str
+        Class name to assign if no semantic data or only UNKNOWN points exist.
+
+    Returns
+    -------
+    tuple[int, str]
+        (class_id, class_name) where class_name is a readable FOVEAX class
+        (e.g. "VEHICLE", "PEDESTRIAN", "SOLID_OBSTACLE", "BUILDING_WALL",
+        "VEGETATION") or fallback_class.
+    """
+    from collections import Counter
+    from src.perception.semantic_labels import FOVEAX_CLASSES
+
+    if semantic_labels is None or len(points_xyzi) == 0:
+        return 7, fallback_class
+
+    c = np.asarray(center_xyz, dtype=np.float32)
+    s = np.asarray(size_lwh, dtype=np.float32)
+    in_box = (
+        (points_xyzi[:, 0] >= c[0] - s[0] / 2.0 - margin)
+        & (points_xyzi[:, 0] <= c[0] + s[0] / 2.0 + margin)
+        & (points_xyzi[:, 1] >= c[1] - s[1] / 2.0 - margin)
+        & (points_xyzi[:, 1] <= c[1] + s[1] / 2.0 + margin)
+        & (points_xyzi[:, 2] >= c[2] - s[2] / 2.0 - margin)
+        & (points_xyzi[:, 2] <= c[2] + s[2] / 2.0 + margin)
+    )
+    box_labels = semantic_labels[in_box]
+    if len(box_labels) == 0:
+        return 7, fallback_class
+
+    # Filter out UNKNOWN (7)
+    valid_labels = box_labels[box_labels != 7]
+    if len(valid_labels) == 0:
+        return 7, fallback_class
+
+    # Prioritize obstacle/object classes (2..6: VEGETATION, BUILDING_WALL, SOLID_OBSTACLE, VEHICLE, PEDESTRIAN)
+    obstacle_labels = valid_labels[(valid_labels >= 2) & (valid_labels <= 6)]
+    if len(obstacle_labels) > 0:
+        counts = Counter(obstacle_labels)
+        majority_id = int(counts.most_common(1)[0][0])
+    else:
+        counts = Counter(valid_labels)
+        majority_id = int(counts.most_common(1)[0][0])
+
+    class_name = FOVEAX_CLASSES.get(majority_id, fallback_class)
+    return majority_id, class_name
 
 
 class MockObjectDetector(ObjectDetector):
@@ -238,18 +331,30 @@ class MockObjectDetector(ObjectDetector):
         1. Reject ground points (z < ground_threshold_m).
         2. Voxel-pre-filter for performance.
         3. BFS cluster within cluster_max_dist_m.
-        4. Fit an axis-aligned 3D bounding box per cluster.
-        5. Assign class_name="unknown_obstacle".
-        6. Compute a deterministic confidence from point count and compactness.
+        4. Axis-aligned bounding box from [min, max] extents.
+        5. Assign class_name="unknown_obstacle" by default, or cross-reference
+           with semantic_labels when provided.
 
-    Returns detections sorted deterministically.
+    Confidence is deterministic and bounded in [0, 1].
 
-    ⚠️  WARNING: This is a geometric baseline for testing, not a trained
-    object detector.  Do NOT cite these results as machine-learning
-    detections.
+    Parameters
+    ----------
+    ground_threshold_m : float
+        Discard points with z < ground_threshold_m (metres).
+    cluster_min_points : int
+        Minimum number of points required to form a cluster.
+    cluster_max_gap_m : float
+        Not used directly by the BFS, kept for configuration consistency.
+    cluster_max_dist_m : float
+        Maximum distance between neighbours in the BFS (metres).
+    voxel_size_m : float
+        Voxel size for pre-filtering (metres).
+    default_class_name : str
+        Default fallback class name when no semantic labels are provided
+        (default "unknown_obstacle").
     """
 
-    _SOURCE = "mock_geometric_clusterer"
+    _SOURCE: str = "mock_geometric_clusterer"
 
     def __init__(
         self,
@@ -258,6 +363,7 @@ class MockObjectDetector(ObjectDetector):
         cluster_max_gap_m: float = _MOCK_DEFAULTS["cluster_max_gap_m"],
         cluster_max_dist_m: float = _MOCK_DEFAULTS["cluster_max_dist_m"],
         voxel_size_m: float = _MOCK_DEFAULTS["voxel_size_m"],
+        default_class_name: str = "unknown_obstacle",
     ) -> None:
         """Configure the mock geometric clusterer.
 
@@ -274,6 +380,8 @@ class MockObjectDetector(ObjectDetector):
             adjacent in the BFS graph.
         voxel_size_m : float
             Voxel size used for pre-filtering the point cloud before clustering.
+        default_class_name : str
+            Default class name for detections when no semantic labels are given.
         """
         if ground_threshold_m < 0.0:
             raise ValueError("ground_threshold_m must be >= 0.")
@@ -291,6 +399,7 @@ class MockObjectDetector(ObjectDetector):
         self.cluster_max_gap_m = cluster_max_gap_m
         self.cluster_max_dist_m = cluster_max_dist_m
         self.voxel_size_m = voxel_size_m
+        self.default_class_name = default_class_name
 
         warnings.warn(
             "MockObjectDetector is a deterministic GEOMETRIC baseline, "
@@ -305,15 +414,21 @@ class MockObjectDetector(ObjectDetector):
         self,
         points_xyzi: np.ndarray,
         timestamp_s: float | None = None,
+        semantic_labels: np.ndarray | None = None,
+        fallback_class_name: str | None = None,
     ) -> list[Detection3D]:
-        """Run geometric clustering and return deterministic detections.
+        """Run geometric clustering on *points_xyzi*.
 
         Parameters
         ----------
         points_xyzi : np.ndarray, shape (N, 4), dtype float32
-            Columns [x, y, z, intensity].
+            Point cloud with columns [x, y, z, intensity].
         timestamp_s : float or None
             Ignored by the mock detector (no temporal model).
+        semantic_labels : np.ndarray, shape (N,), optional
+            Per-point FOVEAX class IDs to cross-reference detected clusters.
+        fallback_class_name : str, optional
+            Override class name when unclassified or no semantic labels given.
 
         Returns
         -------
@@ -346,9 +461,12 @@ class MockObjectDetector(ObjectDetector):
         #    pre-filter can collapse distinct clusters into a single voxel.
         #    Skip for clouds with fewer than 5000 points after ground removal.
         if self.voxel_size_m > 0.0 and n >= 5000:
-            keys = np.array(
-                [_voxel_cluster_key(p, self.voxel_size_m) for p in xyz]
-            )
+            # Vectorized: was a Python list comprehension calling
+            # _voxel_cluster_key() once per point (profiled as part of
+            # MockObjectDetector.detect()'s dominant cost on real,
+            # ~131k-point RELLIS-3D frames). Same per-point formula,
+            # computed for the whole array in one NumPy call.
+            keys = _voxel_cluster_keys_vectorized(xyz, self.voxel_size_m)
             # Lexicographic sort by voxel key, then by original index for
             # determinism.
             order = np.lexsort((np.arange(n), keys[:, 0], keys[:, 1], keys[:, 2]))
@@ -359,7 +477,7 @@ class MockObjectDetector(ObjectDetector):
             unique_mask = np.concatenate(
                 (
                     np.ones(1, dtype=bool),
-                    (keys[1:] != keys[:-1]).all(axis=1),
+                    (keys[1:] != keys[:-1]).any(axis=1),
                 )
             )
             xyz = xyz[unique_mask]
@@ -369,37 +487,96 @@ class MockObjectDetector(ObjectDetector):
         if n == 0:
             return []
 
-        # 3. BFS clustering.
+        # 3. Clustering via a vectorized radius-neighbor graph + connected
+        # components -- replaces a manual per-point BFS that used
+        # cKDTree.query_ball_point plus a per-neighbor-list sorted() call.
+        # Profiled at 78% of MockObjectDetector.detect()'s time on a real
+        # ~131k-point RELLIS-3D frame (0.168s of 0.214s total), dominated
+        # by one query_ball_point() call per point plus 4,774 sorted()
+        # calls on their neighbor lists.
+        #
+        # That sorted() call only ever affected the BFS's internal
+        # traversal order *within* a connected component (which of a
+        # point's neighbors got visited first) -- it never affected which
+        # points ended up in which cluster, how many clusters existed, or
+        # any value derived from a cluster (center = mean of its points,
+        # size = its AABB extent are both order-invariant over the
+        # cluster's point set). Removing it changes nothing about the
+        # actual output.
+        #
+        # cKDTree.query_pairs(r) returns every unordered pair of points
+        # within cluster_max_dist_m of each other -- both it and the old
+        # query_ball_point(r) use the identical inclusive (<= r)
+        # Euclidean-distance adjacency criterion, so the resulting graph's
+        # connected components are exactly the same partition the BFS
+        # computed, just derived in one vectorized call instead of n
+        # sequential Python-level ones.
         clusters: list[list[int]] = []
-        visited = np.zeros(n, dtype=bool)
-        # Pre-compute the squared distance threshold.
-        max_dist_sq = self.cluster_max_dist_m ** 2
+        if n > 0:
+            try:
+                from scipy.spatial import cKDTree
+                from scipy.sparse import coo_matrix
+                from scipy.sparse.csgraph import connected_components
 
-        for start in range(n):
-            if visited[start]:
-                continue
-            stack = [start]
-            visited[start] = True
-            cluster: list[int] = []
-            while stack:
-                idx = stack.pop()
-                cluster.append(idx)
-                px, py, pz = xyz[idx]
-                # Check every unvisited point as a potential neighbour.
-                # This is O(K * cluster_size * n) worst-case; acceptable for
-                # mock detector scale.  For large clouds the user should rely
-                # on the voxel pre-filter.
-                for j in range(n):
-                    if visited[j]:
+                tree = cKDTree(xyz)
+                pairs = tree.query_pairs(self.cluster_max_dist_m, output_type="ndarray")
+
+                # connected_components(..., directed=False) treats the
+                # graph as undirected internally (confirmed: edges given
+                # in only one direction still connect both endpoints), so
+                # query_pairs' single-direction (i < j) pairs are enough
+                # -- no need to duplicate each edge in both directions
+                # first, which only added sparse-matrix construction
+                # overhead (sum_duplicates/sort_indices) without changing
+                # the resulting components.
+                if len(pairs) > 0:
+                    data = np.ones(len(pairs), dtype=bool)
+                    adjacency = coo_matrix((data, (pairs[:, 0], pairs[:, 1])), shape=(n, n))
+                else:
+                    adjacency = coo_matrix((n, n), dtype=bool)
+
+                _, labels = connected_components(adjacency, directed=False)
+
+                # Group point indices by component, then order components
+                # the same way the old sequential BFS discovered them: by
+                # the smallest point index each component contains (the
+                # old loop always started its next unvisited component at
+                # the next-smallest untouched index). This is not required
+                # for correctness of the final Detection3D list (that is
+                # separately, deterministically re-sorted by
+                # _deterministic_cluster_sort_key below) but keeps this
+                # intermediate ordering identical to the previous
+                # implementation's for anyone inspecting it directly.
+                order = np.argsort(labels, kind="stable")
+                sorted_labels = labels[order]
+                boundaries = np.flatnonzero(np.diff(sorted_labels)) + 1
+                groups = np.split(order, boundaries)
+                groups.sort(key=lambda g: int(g.min()))
+                clusters = [g.tolist() for g in groups]
+            except ImportError:
+                max_dist_sq = self.cluster_max_dist_m ** 2
+                visited = np.zeros(n, dtype=bool)
+                for start in range(n):
+                    if visited[start]:
                         continue
-                    qx, qy, qz = xyz[j]
-                    dx = px - qx
-                    dy = py - qy
-                    dz = pz - qz
-                    if dx * dx + dy * dy + dz * dz <= max_dist_sq:
-                        visited[j] = True
-                        stack.append(j)
-            clusters.append(cluster)
+                    stack = [start]
+                    visited[start] = True
+                    cluster: list[int] = []
+                    while stack:
+                        idx = stack.pop()
+                        cluster.append(idx)
+                        px, py, pz = xyz[idx]
+                        for j in range(n):
+                            if visited[j]:
+                                continue
+                            qx, qy, qz = xyz[j]
+                            dx = px - qx
+                            dy = py - qy
+                            dz = pz - qz
+                            if dx * dx + dy * dy + dz * dz <= max_dist_sq:
+                                visited[j] = True
+                                stack.append(j)
+                    clusters.append(cluster)
 
         # 4. Build detections for clusters above the minimum size.
         detections: list[Detection3D] = []
@@ -409,7 +586,19 @@ class MockObjectDetector(ObjectDetector):
             pts = xyz[cluster]
             min_xyz = pts.min(axis=0)
             max_xyz = pts.max(axis=0)
-            center = ((min_xyz + max_xyz) / 2.0).astype(np.float32)
+            # Real point centroid (mean position), NOT the AABB midpoint.
+            # Root cause of a false-positive "moving vegetation" bug: for a
+            # diffuse/sparse cluster (e.g. a real vegetation patch), the BFS
+            # connectivity graph (cluster_max_dist_m below) can borderline
+            # bridge or fail to bridge to a nearby sub-clump depending on a
+            # handful of points -- when that happens the AABB midpoint swings
+            # by meters between frames even though almost none of the real
+            # points moved, since (min+max)/2 depends only on the two most
+            # extreme points. The mean of all real points in the cluster is
+            # far more stable against that kind of borderline merge/split,
+            # while staying numerically identical to the AABB midpoint for
+            # compact, roughly-symmetric clusters (vehicles, pedestrians).
+            center = pts.mean(axis=0).astype(np.float32)
             size = (max_xyz - min_xyz).astype(np.float32)
             # yaw is 0 for axis-aligned boxes produced by this baseline.
             yaw = 0.0
@@ -436,12 +625,24 @@ class MockObjectDetector(ObjectDetector):
             count_factor = float(np.clip(n_pts / 50.0, 0.0, 1.0))
             confidence = float(np.clip(0.3 + 0.5 * count_factor + 0.2 * compactness, 0.0, 1.0))
 
+            if semantic_labels is not None:
+                cid, cname = classify_cluster_from_semantics(
+                    center,
+                    size,
+                    points_xyzi,
+                    semantic_labels,
+                    fallback_class=fallback_class_name or "unclassified",
+                )
+            else:
+                cid = 0
+                cname = fallback_class_name if fallback_class_name is not None else self.default_class_name
+
             d = Detection3D(
                 center_xyz=center,
                 size_lwh=size,
                 yaw_rad=yaw,
-                class_id=0,  # single "unknown" class
-                class_name="unknown_obstacle",
+                class_id=cid,
+                class_name=cname,
                 confidence=confidence,
                 source=self._SOURCE,
                 metadata={

@@ -394,6 +394,8 @@ class OpenPCDetPointPillarsDetector(ObjectDetector):
         self,
         points_xyzi: np.ndarray,
         timestamp_s: float | None = None,
+        semantic_labels: np.ndarray | None = None,
+        **kwargs: Any,
     ) -> list[Detection3D]:
         """Detect objects using the pretrained OpenPCDet model.
 
