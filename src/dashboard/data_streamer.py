@@ -195,6 +195,13 @@ class DataStreamerThread(QThread):
         All arrays are indexed [row=y, col=x] over self.grid_extent, not yet
         flipped for display -- kept that way here so real-world x/y math
         below stays simple.
+
+        FORWARD_AXIS = +Y. This convention (road width / elevation
+        profile sweep over rows at a fixed centerline column, i.e. Y is
+        "ahead" and X is "lateral") must match
+        src/dashboard/export_web_dashboard_data.py::compute_ego_terrain_status,
+        which previously used the opposite (+X forward) and was corrected
+        to agree with this file -- do not let the two drift apart again.
         """
         x_min, x_max, y_min, y_max = self.grid_extent
 

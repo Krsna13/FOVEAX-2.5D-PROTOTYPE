@@ -291,20 +291,29 @@ def find_hazard_clusters(grid: GridResult) -> list[dict]:
 
 
 def compute_ego_terrain_status(grid: GridResult) -> dict:
-    """Compute real terrain status ahead of the vehicle."""
+    """Compute real terrain status ahead of the vehicle.
+
+    FORWARD_AXIS = +Y (matches src/dashboard/data_streamer.py's
+    elevation_profile/road_width, which already treat +Y as forward and
+    +X as lateral -- this function previously used the opposite
+    convention, +X as forward, silently diverging from the rest of the
+    codebase since the EV-3 investigation flagged it. Fixed here so both
+    the live dashboard and this web-export path agree on which axis is
+    "ahead" for the same real frame.
+    """
     x_min, x_max, y_min, y_max = grid.extent_m
-    
-    # Ego ROI: 2m to 10m ahead, -2m to 2m sideways
-    roi_x_min, roi_x_max = 2.0, 10.0
-    roi_y_min, roi_y_max = -2.0, 2.0
-    
+
+    # Ego ROI: 2m to 10m ahead (+Y, forward), -2m to 2m sideways (X, lateral)
+    roi_forward_min, roi_forward_max = 2.0, 10.0
+    roi_lateral_min, roi_lateral_max = -2.0, 2.0
+
     res_x = grid.resolution_m
     res_y = grid.resolution_m
-    
-    col_min = int(max(0, np.floor((roi_x_min - x_min) / res_x)))
-    col_max = int(min(grid.cols, np.ceil((roi_x_max - x_min) / res_x)))
-    row_min = int(max(0, np.floor((roi_y_min - y_min) / res_y)))
-    row_max = int(min(grid.rows, np.ceil((roi_y_max - y_min) / res_y)))
+
+    col_min = int(max(0, np.floor((roi_lateral_min - x_min) / res_x)))
+    col_max = int(min(grid.cols, np.ceil((roi_lateral_max - x_min) / res_x)))
+    row_min = int(max(0, np.floor((roi_forward_min - y_min) / res_y)))
+    row_max = int(min(grid.rows, np.ceil((roi_forward_max - y_min) / res_y)))
     
     roi_trav = grid.traversability[row_min:row_max, col_min:col_max]
     roi_density = grid.point_density[row_min:row_max, col_min:col_max]

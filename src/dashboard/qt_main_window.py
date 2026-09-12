@@ -25,6 +25,16 @@ RESOLUTION_ZONES = [
 TRAVERSABILITY_SAFE_MIN = 0.70
 TRAVERSABILITY_CAUTION_MIN = 0.40
 
+# Number of consecutive frames a new Approaching/Receding/Crossing
+# classification must persist before the DISPLAYED direction label
+# actually changes (Bug 3 fix). Confirmed on real data: a real VEHICLE
+# track's radial velocity oscillating within ~0.1 m/s of the existing
+# +-0.2 m/s deadband boundary flipped the label 3 times in 20 frames
+# without this. This does not change the underlying radial-velocity
+# computation or the deadband itself -- only how quickly a label change
+# is allowed to reach the screen.
+DIRECTION_HYSTERESIS_FRAMES = 3
+
 # Dashboard color tokens, matched to foveax_rough_dashboard.html's CSS
 # custom properties (kept identical so the restyled Qt UI reads as the same
 # visual system as the reference/web dashboards).
@@ -390,6 +400,13 @@ class FoveaXDashboardWindow(QMainWindow):
         self.embed_3d = embed_3d
         self.embed_widget = None
         self._map_type_buttons = {}
+        # Direction-label hysteresis state (Bug 3 fix): track_id ->
+        # {"committed": str, "candidate": str, "count": int}. See
+        # _stabilize_direction_label() for why this exists -- it never
+        # changes the real radial-velocity computation, only how many
+        # consecutive frames a new label must persist before the
+        # DISPLAYED label actually changes.
+        self._direction_label_state: dict[int, dict] = {}
         self._init_ui()
 
     # ------------------------------------------------------------------
@@ -963,6 +980,39 @@ class FoveaXDashboardWindow(QMainWindow):
             self.drawer.move(self.width() - self.drawer.width() - 20, 60)
             self.drawer.resize(self.drawer.width(), self.height() - 100)
             
+    def _stabilize_direction_label(self, track_id: int, raw_direction: str) -> str:
+        """Hysteresis for the DISPLAYED Approaching/Receding/Crossing
+        label (Bug 3 fix). Never touches the real radial-velocity value
+        or the +-0.2 m/s deadband itself -- a new classification must
+        repeat for DIRECTION_HYSTERESIS_FRAMES consecutive real frames
+        before it's allowed to replace the currently displayed label,
+        the same "require consistency before changing what's shown"
+        pattern already used for the Static/Dynamic flag's min_hits_for_dynamic.
+        """
+        state = self._direction_label_state.get(track_id)
+        if state is None:
+            self._direction_label_state[track_id] = {
+                "committed": raw_direction, "candidate": raw_direction, "count": 1,
+            }
+            return raw_direction
+
+        if raw_direction == state["committed"]:
+            state["candidate"] = raw_direction
+            state["count"] = 0
+            return state["committed"]
+
+        if raw_direction == state["candidate"]:
+            state["count"] += 1
+        else:
+            state["candidate"] = raw_direction
+            state["count"] = 1
+
+        if state["count"] >= DIRECTION_HYSTERESIS_FRAMES:
+            state["committed"] = raw_direction
+            state["count"] = 0
+
+        return state["committed"]
+
     def _update_alerts(self, alerts):
         """Update the real approaching object alert cards."""
         # Clear existing cards
@@ -1041,7 +1091,17 @@ class FoveaXDashboardWindow(QMainWindow):
         for t in state.tracks:
             speed = np.linalg.norm(t.state[3:6])
             dyn_str = "Dynamic" if t.dynamic else "Static"
-            item_text = f"ID: {t.track_id} | {t.class_name} | {dyn_str} | {speed:.1f} m/s"
+            # Display-only fix: a track already correctly classified
+            # Static (either too few real hits to trust its velocity
+            # estimate yet, or a real-world-immobile class gated by
+            # _STATIC_ONLY_CLASSES -- see multi_object_tracker.py) can
+            # still carry a real nonzero raw Kalman speed estimate
+            # (confirmed on real data: 0.3-2.9 m/s, noisy/transient).
+            # Showing that raw number next to "Static" reads as
+            # contradictory. The classification itself is untouched --
+            # only what's displayed for an already-Static track changes.
+            displayed_speed = 0.0 if not t.dynamic else speed
+            item_text = f"ID: {t.track_id} | {t.class_name} | {dyn_str} | {displayed_speed:.1f} m/s"
             self.list_tracks.addItem(item_text)
             if t.dynamic:
                 dist = float(np.hypot(t.state[0], t.state[1]))
@@ -1068,25 +1128,31 @@ class FoveaXDashboardWindow(QMainWindow):
 
         # Update real alert cards for approaching objects
         alerts = []
+        seen_track_ids = set()
         for t in state.tracks:
             dist = float(np.hypot(t.state[0], t.state[1]))
             if dist < 15.0 and t.dynamic:
+                seen_track_ids.add(t.track_id)
                 speed = float(np.linalg.norm(t.state[3:6]))
                 x, y = float(t.state[0]), float(t.state[1])
                 vx, vy = float(t.state[3]), float(t.state[4])
-                
+
                 # relative radial velocity = (x*vx + y*vy)/dist
                 # Negative means the object is moving towards the ego (0,0)
+                # -- this real computation is unchanged by the Bug 3 fix
+                # below; only the DISPLAYED label is stabilized.
                 radial_v = (x*vx + y*vy) / dist if dist > 0.1 else 0.0
-                
+
                 # Classify direction using real vector math
                 if radial_v < -0.2:
-                    direction = "Approaching"
+                    raw_direction = "Approaching"
                 elif radial_v > 0.2:
-                    direction = "Receding"
+                    raw_direction = "Receding"
                 else:
-                    direction = "Crossing"
-                    
+                    raw_direction = "Crossing"
+
+                direction = self._stabilize_direction_label(t.track_id, raw_direction)
+
                 if direction == "Approaching":
                     if dist < 10.0:
                         prox = "Proximity: Close (<10m)"
@@ -1098,6 +1164,14 @@ class FoveaXDashboardWindow(QMainWindow):
                     
         alerts.sort(key=lambda x: x[0])
         self._update_alerts(alerts[:3])
+
+        # Drop hysteresis state for tracks no longer in the qualifying
+        # (dist<15m, dynamic) set -- avoids unbounded growth over a long
+        # playback and lets a track that leaves/re-enters range start
+        # fresh rather than carrying stale candidate-label state.
+        stale_ids = set(self._direction_label_state) - seen_track_ids
+        for tid in stale_ids:
+            del self._direction_label_state[tid]
 
         # 3. Update 2D Map Image
         if self.current_map_type == "overhead":
