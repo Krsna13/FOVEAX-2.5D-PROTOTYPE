@@ -92,25 +92,33 @@ Raw LiDAR Point Cloud [x, y, z, intensity]
 
 FoveaX dynamically scales 2.5D grid resolution based on radial distance from the sensor across three concentric foveated zones (extending up to 100 meters, compliant with DRDO / SIH-26053 specifications):
 
+#### 1. Terrain Elevation Progression (Ground Hazards & Elevation Bump)
 | 🔭 Far Zone (35m – 100m) | 🧭 Middle Zone (15m – 35m) | 🎯 Near Zone (0m – 15m) |
 | :---: | :---: | :---: |
 | <img src="docs/assets/adaptive_far_zone_50cm.png" width="260" alt="Far Zone (50cm cells, Range 85m)"> | <img src="docs/assets/adaptive_mid_zone_20cm.png" width="260" alt="Middle Zone (20cm cells, Range 32m)"> | <img src="docs/assets/adaptive_near_zone_5cm.png" width="260" alt="Near Zone (5cm cells, Range 9m)"> |
 | **Cell Size:** `50 cm` &nbsp;\|&nbsp; **Range:** `35 – 100 m` | **Cell Size:** `20 cm` &nbsp;\|&nbsp; **Range:** `15 – 35 m` | **Cell Size:** `5 cm` &nbsp;\|&nbsp; **Range:** `0 – 15 m` |
 | **Macro-Awareness & Route Guidance** | **Contour Emergence & Corridor Selection** | **Full Geometric Resolution & Step Hazards** |
 
+#### 2. Obstacle Geometry Progression (Vehicle Profile Emergence)
+| 🔭 Far Zone (35m – 100m) | 🧭 Middle Zone (15m – 35m) | 🎯 Near Zone (0m – 15m) |
+| :---: | :---: | :---: |
+| <img src="docs/assets/adaptive_vehicle_far_50cm.png" width="260" alt="Vehicle Far Zone (50cm cells)"> | <img src="docs/assets/adaptive_vehicle_mid_20cm.png" width="260" alt="Vehicle Middle Zone (20cm cells)"> | <img src="docs/assets/adaptive_vehicle_near_5cm.png" width="260" alt="Vehicle Near Zone (5cm cells)"> |
+| **Cell Size:** `50 cm` &nbsp;\|&nbsp; **Range:** `35 – 100 m` | **Cell Size:** `20 cm` &nbsp;\|&nbsp; **Range:** `15 – 35 m` | **Cell Size:** `5 cm` &nbsp;\|&nbsp; **Range:** `0 – 15 m` |
+| **Coarse Bounding Volume & Occupancy** | **Cabin & Wheel Outline Emergence** | **Full Structural Contours & Precision Evasion** |
+
 #### How Adaptive Foveation Operates in the Pipeline:
 
 1. **Far Zone (`35 m – 100 m` · `50 cm` Resolution)**:
-   - **Operational Role:** Early lookahead and global route guidance.
-   - **Perception Behavior:** At extended ranges (e.g., 85 m), LiDAR point density decays quadratically with distance ($1/r^2$). A coarse 50 cm grid aggregates sparse returns into macro-terrain trends, regional slopes, and boundary obstacles without wasting memory on empty cells. Achieves **>99.9% cell count reduction** and **>99.7% memory savings** compared to uniform 5 cm 3D voxelization (471k cells vs 2.56B voxels over $200\text{m} \times 200\text{m} \times 8\text{m}$).
+   - **Operational Role:** Long-range situational awareness, macro-obstacle clustering, and global route guidance.
+   - **Perception Behavior:** At long range (35–100 m), LiDAR angular beam divergence causes returns to disperse ($1/r^2$). Allocating dense cells here would produce predominantly empty memory voxels. The coarse **50 cm** grid aggregates sparse points into solid occupancy clusters, capturing macro-terrain gradients and coarse obstacle presence while slashing memory by **>99.7%** compared to uniform 5 cm voxel grids (471k cells vs 2.56B voxels over $200\text{m} \times 200\text{m} \times 8\text{m}$).
 
 2. **Middle Zone (`15 m – 35 m` · `20 cm` Resolution)**:
-   - **Operational Role:** Local path planning and traversability corridor validation.
-   - **Perception Behavior:** As the rover approaches intermediate ranges (e.g., 32 m), point returns become denser. The 20 cm grid transitions blocky detections into recognizable obstacle contours (*"rounded bump shape emerging"*). Balances spatial fidelity with high-speed real-time processing (>15 FPS).
+   - **Operational Role:** Local trajectory planning, preliminary object classification, and traversability corridor validation.
+   - **Perception Behavior:** As the rover advances to intermediate distances (15–35 m), higher return density activates the **20 cm** grid. Coarse rectangular blocks refine into recognizable geometric profiles—rooflines, windshield inclinations, and wheel arches emerge. Gives the planner sufficient spatial fidelity to evaluate clearance corridors at real-time speeds (>15 FPS).
 
 3. **Near Zone (`0 m – 15 m` · `5 cm` Resolution)**:
    - **Operational Role:** Safety-critical reactive collision avoidance, step-height hazard detection, and micro-roughness assessment.
-   - **Perception Behavior:** In the immediate proximity of the vehicle (e.g., 9 m), fine 5 cm foveation resolves the complete, crisp 3D morphology of stones, step heights, ditches, and negative obstacles (*"full stone geometry resolved"*). Guarantees millimeter-accurate ground clearance and traction evaluation directly in the vehicle's braking horizon.
+   - **Perception Behavior:** Within the vehicle's immediate braking envelope (0–15 m), fine **5 cm** foveation resolves the full structural contours of objects and terrain (e.g., distinct wheel hubs, bumpers, negative ditches, step-height edges). Enables millimeter-accurate elevation difference measurements (`z_max - z_min`) right where navigation decisions are safety-critical.
 
 
 ### Phase 5: Spatial Importance & ROI Computation
