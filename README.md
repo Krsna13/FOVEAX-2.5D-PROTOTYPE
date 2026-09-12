@@ -14,9 +14,9 @@ a live PyQt5 + Open3D dashboard.
 🖥️ **Run the dashboard**: `python src/13_realtime_dashboard.py` (see [Setup](#4-setup) and [How to Run](#5-how-to-run) below)
 
 <div align="center">
-  <video src="https://github.com/Krsna13/FOVEAX-2.5D-PROTOTYPE/raw/main/docs/assets/foveax_dashboard_demo.mp4" controls="controls" width="100%"></video>
+  <img src="docs/assets/foveax_gui_demo.gif" width="100%" alt="FOVEAX 2.5D Real-Time PyQt5 + Open3D Dashboard in Action" />
   <p><em>🎥 <b>Real-Time FOVEAX Dashboard Demonstration</b> — Live LiDAR streaming, Kalman multi-object tracking, 2.5D adaptive foveated elevation, and terrain traversability in PyQt5 + Open3D</em></p>
-  <p><a href="docs/assets/foveax_dashboard_demo.mp4">▶️ <b>Watch / Download Demo Video (MP4)</b></a></p>
+  <p><a href="docs/assets/foveax_dashboard_demo.mp4">▶️ <b>Watch / Download Full HD Demo Video (MP4)</b></a></p>
 </div>
 
 ---
