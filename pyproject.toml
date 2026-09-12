@@ -12,25 +12,49 @@ license = { text = "MIT" }
 authors = [
     { name = "FOVEAX Team" }
 ]
+# Core pipeline only (Phases 1-6, 8 mock detector, 11 profiling) -- no
+# GUI, no deep learning. Every version is pinned to the exact real
+# version installed in this project's development environment
+# (confirmed via `pip freeze`, 2026-09-13), not a loose >= constraint.
 dependencies = [
     "numpy==2.4.6",
     "scipy==1.17.1",
-    "open3d==0.19.0",
     "opencv-python==5.0.0.93",
-    "matplotlib==3.11.1",
-    "PyQt5==5.15.11",
     "PyYAML==6.0.3",
     "psutil==7.2.2",
     "tqdm==4.70.0",
-    "pywin32==312; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
+# Phase 9 real-time dashboard (src/13_realtime_dashboard.py): the 3D
+# Open3D view + PyQt5 2D/metrics panels.
+dashboard = [
+    "open3d==0.19.0",
+    "matplotlib==3.11.1",
+    "PyQt5==5.15.11",
+    "PyQt5-Qt5==5.15.2",
+    "PyQt5_sip==12.19.0",
+    "pywin32==312; sys_platform == 'win32'",
+]
+# Real SalsaNext inference (--predictor/--source salsanext). NOT needed
+# for --predictor ground_truth or mock, which is the default everywhere
+# in this project.
+#
+# CRITICAL: the target hardware is an NVIDIA RTX 5050 Laptop GPU
+# (Blackwell GB207, compute capability sm_120). The default
+# `pip install torch` resolves to a cu126 build that installs
+# successfully and reports cuda.is_available()==True, but has NO
+# compiled sm_120 kernels -- it fails on any real GPU operation with
+# "no kernel image is available for execution on the device", silently,
+# with no install-time warning. Install via:
+#   pip install torch==2.14.0 torchvision --index-url https://download.pytorch.org/whl/cu130
+ai = [
+    "torch==2.14.0+cu130",
+    "torchvision==0.29.0+cu130",
+]
 dev = [
     "pytest==9.1.1",
 ]
-# For GPU deep learning models, install PyTorch cu130:
-# pip install torch==2.14.0+cu130 torchvision==0.29.0+cu130 --extra-index-url https://download.pytorch.org/whl/cu130
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

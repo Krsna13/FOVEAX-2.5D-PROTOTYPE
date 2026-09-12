@@ -1,4 +1,4 @@
-FOVEAX Phase 3 â€” Terrain Analysis Metrics
+FOVEAX Phase 3 — Terrain Analysis Metrics
 ================================================
 
 Grid: 14875 cells (85 x 175)

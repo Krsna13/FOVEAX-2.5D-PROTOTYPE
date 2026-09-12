@@ -14,3 +14,25 @@ OpenPCDet Repository: Missing
 3. Install OpenPCDet dependencies:
    cd external/OpenPCDet && pip install -r requirements.txt && pip install -e .
 4. Obtain an official PointPillars pretrained checkpoint and place it in models/openpcdet/
+
+======================================================================
+Run timestamp: 2026-09-12T16:55:45.386119
+======================================================================
+=== Runtime Benchmark Measurements ===
+Detector Architecture: MockObjectDetector
+Execution Device     : CPU
+Frames Evaluated     : 10
+Inference Latency    : mean=42.40 ms | min=0.73 ms | max=410.57 ms
+Throughput           : 23.58 FPS
+NOTE: Measured benchmark numbers only. No real-time capability claims made.
+
+======================================================================
+Run timestamp: 2026-09-12T16:57:43.849986
+======================================================================
+=== Runtime Benchmark Measurements ===
+Detector Architecture: MockObjectDetector
+Execution Device     : CPU
+Frames Evaluated     : 5
+Inference Latency    : mean=83.09 ms | min=14.68 ms | max=337.59 ms
+Throughput           : 12.04 FPS
+NOTE: Measured benchmark numbers only. No real-time capability claims made.

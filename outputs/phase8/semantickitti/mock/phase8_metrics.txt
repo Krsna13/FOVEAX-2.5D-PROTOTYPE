@@ -1,0 +1,21 @@
+============================================================
+FOVEAX Phase 8A — Object Detection & Tracking Metrics
+Source: semantickitti/00
+============================================================
+
+Total frames            : 5
+Average input points/frame: 124,377.4
+Average mock detections/frame: 68.60
+Active tracks (final frame): 93
+Dynamic tracks (final frame): 70
+
+Average detection time  : 83.088 ms
+Average tracking time    : 27.131 ms
+Average total time/frame : 110.218 ms
+
+NOTE: MockObjectDetector is a deterministic GEOMETRIC BASELINE,
+NOT an AI object detector.  Do not use these results for
+safety claims.  Phase 8B will integrate PointPillars or
+CenterPoint via OpenPCDet for real AI detections.
+
+Output directory: outputs\phase8\semantickitti\mock

@@ -3,15 +3,15 @@ FOVEAX Phase 8A — Object Detection & Tracking Metrics
 Source: sample
 ============================================================
 
-Total frames            : 2
+Total frames            : 10
 Average input points/frame: 2,150.0
 Average mock detections/frame: 1.00
 Active tracks (final frame): 1
-Dynamic tracks (final frame): 0
+Dynamic tracks (final frame): 1
 
-Average detection time  : 6.290 ms
-Average tracking time    : 242.118 ms
-Average total time/frame : 248.408 ms
+Average detection time  : 42.401 ms
+Average tracking time    : 12.604 ms
+Average total time/frame : 55.005 ms
 
 NOTE: MockObjectDetector is a deterministic GEOMETRIC BASELINE,
 NOT an AI object detector.  Do not use these results for

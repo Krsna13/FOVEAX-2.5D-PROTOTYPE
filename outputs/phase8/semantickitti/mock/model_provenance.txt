@@ -1,0 +1,2 @@
+detector source: mock_geometric_clusterer
+outputs are geometric clusters, not AI predictions.

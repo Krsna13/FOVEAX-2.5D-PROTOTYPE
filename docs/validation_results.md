@@ -154,10 +154,12 @@ project's real-data throughput.
 
 ## 7. Test Suite Status
 
-Fresh run, same commit as this document:
+Fresh run, re-confirmed 2026-09-13 (post display-fix pass: Static-speed
+display, forward-axis standardization, direction-label hysteresis --
+11 new regression tests added since this doc's original numbers above):
 
 ```
-341 passed, 33 warnings in 2.61s
+352 passed, 33 warnings in 4.20s
 ```
 
 No skipped tests, no failures, no regressions against any prior baseline

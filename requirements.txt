@@ -1,36 +1,85 @@
 # FOVEAX Trail: Dependencies
-# 
-# CRITICAL HARDWARE NOTE FOR PYTORCH:
-# The primary target hardware is NVIDIA RTX 5050 Laptop GPU (Blackwell GB207, compute capability sm_120).
-# The standard cu126 build of PyTorch installs but has NO compiled sm_120 kernels, resulting in
-# runtime failure: "no kernel image is available for execution on the device".
-# PyTorch MUST be installed from the cu130 wheel index:
 #
-#   pip install torch==2.14.0+cu130 torchvision==0.29.0+cu130 --extra-index-url https://download.pytorch.org/whl/cu130
-
---extra-index-url https://download.pytorch.org/whl/cu130
-torch==2.14.0+cu130
-torchvision==0.29.0+cu130
-
-# Core Scientific Computing & 3D Geometry
+# Every version below is pinned to the exact real version installed in
+# this project's development environment (confirmed via `pip freeze`
+# against C:\FOVEAX 2.5D\foveax_venv on 2026-09-13), not a loose >=
+# constraint -- this is a research/prototype pipeline where an
+# untested newer release of any of these could silently change output.
+#
+# Grouped into tiers so a reader only needing the offline grid/
+# traversability pipeline (Phases 1-6, 11 profiling) doesn't have to
+# install the GUI or deep-learning stack just to try it:
+#   1. Core pipeline      -- always required.
+#   2. Dashboard extras    -- only for src/13_realtime_dashboard.py (Phase 9).
+#   3. Deep learning extras -- only for --predictor/--source salsanext.
+#   4. Dev/test.
+#
+# ============================================================================
+# 1. Core pipeline (Phases 1-6, 8 mock detector, 11 profiling)
+# ============================================================================
 numpy==2.4.6
 scipy==1.17.1
-open3d==0.19.0
 opencv-python==5.0.0.93
-matplotlib==3.11.1
-
-# GUI Dashboard & Visualization
-PyQt5==5.15.11
-
-# Windows-only: embeds the Open3D window as a panel inside the main
-# dashboard window (src/dashboard/win32_embed.py). Optional -- its absence
-# is handled as a graceful fallback to two separate windows, not a crash.
-pywin32==312; sys_platform == "win32"
-
-# Utilities, Configs & Telemetry
 PyYAML==6.0.3
 psutil==7.2.2
 tqdm==4.70.0
 
-# Testing
+# ============================================================================
+# 2. Dashboard extras (Phase 9: src/13_realtime_dashboard.py)
+# ============================================================================
+open3d==0.19.0
+matplotlib==3.11.1
+PyQt5==5.15.11
+PyQt5-Qt5==5.15.2
+PyQt5_sip==12.19.0
+
+# Windows-only: embeds the Open3D window as a panel inside the main
+# dashboard window (src/dashboard/win32_embed.py). Optional -- its
+# absence is handled as a graceful fallback to two separate windows,
+# not a crash.
+pywin32==312; sys_platform == "win32"
+
+# ============================================================================
+# 3. Deep learning extras (real SalsaNext inference: --predictor salsanext /
+#    --source salsanext). Not needed for --predictor ground_truth or mock,
+#    or for any of Phases 1-6/8/9/11 in their default configuration.
+# ============================================================================
+#
+# CRITICAL HARDWARE NOTE:
+# The development target is an NVIDIA RTX 5050 Laptop GPU (Blackwell
+# GB207, compute capability sm_120). The default `pip install torch`
+# resolves to a cu126 build. That build INSTALLS SUCCESSFULLY and
+# reports `torch.cuda.is_available() == True`, but has NO compiled
+# sm_120 kernels -- it will fail on any real GPU tensor operation with
+# "CUDA error: no kernel image is available for execution on the
+# device". This is silent until you actually run inference; it will
+# not show up as an install-time error.
+#
+# Install the cu130 build explicitly instead:
+#   pip install torch==2.14.0 torchvision --index-url https://download.pytorch.org/whl/cu130
+#
+# (torchvision has no separate +cu130-suffixed release on PyPI/the
+# PyTorch index at this version; installing it from the cu130 index
+# alongside the pinned torch build above resolves it to the matching
+# build automatically -- confirmed in this project's real environment
+# as torchvision==0.29.0+cu130.)
+--extra-index-url https://download.pytorch.org/whl/cu130
+torch==2.14.0+cu130
+torchvision==0.29.0+cu130
+
+# ============================================================================
+# 4. Testing
+# ============================================================================
 pytest==9.1.1
+
+# ============================================================================
+# Environment fragility note (confirmed during development, not
+# theoretical): keep the venv itself, and any large model/dataset
+# directories (external/, models/, data/), OUTSIDE any cloud-synced
+# folder (OneDrive, Dropbox, Google Drive, etc.). This project's venv
+# and repo were originally under OneDrive and suffered real, confirmed
+# file corruption from the sync client touching files mid-write during
+# large package installs and dataset extraction. Keep them on a plain
+# local path instead (this repo's own development path is
+# C:\FOVEAX 2.5D\FOVEAX_2.5D_TRAIL with the venv at
+# C:\FOVEAX 2.5D\foveax_venv, deliberately outside any synced folder).

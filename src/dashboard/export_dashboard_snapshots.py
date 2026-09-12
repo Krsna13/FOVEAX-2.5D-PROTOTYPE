@@ -14,6 +14,20 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+# torch must be imported before PyQt5 on Windows: PyQt5's bundled Qt DLLs
+# conflict with torch's bundled CUDA DLLs (c10.dll) when PyQt5 loads
+# first, causing an import-time crash (WinError 1114 / access
+# violation). This module imports src.dashboard.data_streamer below,
+# which imports PyQt5 -- and data_streamer's live-accuracy path lazily
+# imports torch (via src/10b_eval_distance_metrics.py ->
+# salsanext_predictor.py) later at runtime, so the ordering has to be
+# fixed here regardless of whether this script itself uses torch
+# directly (see the same guard in src/13_realtime_dashboard.py).
+try:
+    import torch  # noqa: F401
+except ImportError:
+    pass
+
 import matplotlib.pyplot as plt
 import numpy as np
 
