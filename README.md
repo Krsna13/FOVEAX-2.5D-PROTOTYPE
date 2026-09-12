@@ -2,10 +2,11 @@
 
 A deterministic, high-performance LiDAR perception and 2.5D adaptive elevation grid mapping pipeline designed for autonomous navigation and off-road/trail terrain understanding without requiring heavy end-to-end models in the real-time path.
 
-🌐 **Live Interactive Web GUI**: [https://krsna13.github.io/FOVEAX-2.5D-PROTOTYPE/](https://krsna13.github.io/FOVEAX-2.5D-PROTOTYPE/)  
-🖥️ **Desktop Real-Time GUI**: Run `Launch_GUI.bat` or `python src/13_realtime_dashboard.py`
+🖥️ **Run Desktop GUI**: Double-click `Launch_GUI.bat` or run `python src/13_realtime_dashboard.py`
 
-![FOVEAX 2.5D PyQt5 Real-Time Dashboard](outputs/phase9/combined_dashboard_confirmed.png)
+## 🚀 Live GUI Running Demo
+
+![FOVEAX 2.5D Real-Time Perception Dashboard Running](outputs/phase9/foveax_gui_running.gif)
 
 ---
 
