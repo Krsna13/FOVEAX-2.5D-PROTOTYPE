@@ -129,6 +129,13 @@ class TrackState:
     source: str = ""
     dynamic: bool = False
     last_timestamp_s: float | None = None
+    # Real, per-frame geometric features computed from this detection's own
+    # member points (src/perception/terrain_features.py), e.g.
+    # {"slope_deg": float, "ground_clearance_m": float, "is_overhang": bool,
+    # "is_probable_rock": bool}. Empty when the detector didn't attach any --
+    # never fabricated on the tracker's side. Refreshed from the matched
+    # detection every frame (not carried over stale from a prior match).
+    metadata: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.state.shape != (6,):
@@ -754,6 +761,11 @@ class MultiObjectTracker:
                 max_missed_frames=self.max_missed_frames,
             )
             track.source = det.source
+            # Refreshed from this frame's real detection, not accumulated --
+            # a feature real last frame but absent this frame (e.g. the
+            # cluster no longer has enough member points for a plane fit)
+            # must not keep showing.
+            track.metadata = dict(getattr(det, "metadata", None) or {})
 
             # Upgrade class_name if track was unclassified or det has a more specific class.
             wildcards = {"unknown_obstacle", "unclassified", "UNKNOWN"}
@@ -779,6 +791,9 @@ class MultiObjectTracker:
             track = self._tracks[row]
             track.missed_frames += 1
             track.age_frames += 1
+            # No real detection this frame to derive geometric features
+            # from -- clear rather than keep showing a stale value.
+            track.metadata = {}
             track.confidence = _compute_track_confidence(
                 detection_confidence=0.0,
                 age_frames=track.age_frames,
@@ -828,6 +843,7 @@ class MultiObjectTracker:
                 source=det.source,
                 dynamic=False,
                 last_timestamp_s=timestamp_s,
+                metadata=dict(getattr(det, "metadata", None) or {}),
             )
             self._next_track_id += 1
             self._tracks.append(track)

@@ -137,8 +137,13 @@ class DashboardApplication:
         self.o3d_queue = Queue(maxsize=10)
         from src.dashboard.open3d_viewer import run_open3d_process
         self._ready_queue = Queue() if self._attempt_embed else None
+        # Box labels are drawn by Qt over the embedded view, so they only
+        # exist in the embedded layout.
+        self._label_queue = Queue(maxsize=4) if self._attempt_embed else None
         self.o3d_process = Process(
-            target=run_open3d_process, args=(self.o3d_queue, self._ready_queue)
+            target=run_open3d_process,
+            args=(self.o3d_queue, self._ready_queue),
+            kwargs={"label_queue": self._label_queue},
         )
         self.o3d_process.start()
 
@@ -466,9 +471,42 @@ class DashboardApplication:
             embed_widget.child_hwnd = child_hwnd
             self._embedded = True
             print("[INFO] Open3D 3D view embedded into the main dashboard window.", flush=True)
+
+            self._label_timer = QTimer()
+            self._label_timer.setInterval(33)
+            self._label_timer.timeout.connect(self._drain_track_labels)
+            self._label_timer.start()
         except Exception as e:
             print(f"[WARNING] Reparenting the Open3D window failed ({e!r}); "
                   "it will remain a separate floating window instead.", flush=True)
+
+    def _drain_track_labels(self):
+        labels = None
+        try:
+            while True:
+                labels = self._label_queue.get_nowait()
+        except Exception:
+            pass
+        if labels is not None:
+            self.qt_window.embed_widget.set_track_labels(labels)
+            # The per-track labels are real native child windows (needed to
+            # draw over the reparented Open3D native window at all -- see
+            # Open3DEmbedWidget). alert_container/threat_toast are now also
+            # native (WA_NativeWindow, see qt_main_window.py) so a real
+            # Win32 z-order change actually applies to them -- plain
+            # Qt raise_() was tried first and was not reliable here, since
+            # mixing alien and native sibling widgets on Windows does not
+            # guarantee an alien-vs-native (or native-vs-native, depending
+            # on Qt version) ordering from raise_() alone. This timer fires
+            # far more often (33ms) than the alert cards refresh, so doing
+            # this every time labels are (re)placed is what keeps the
+            # alerts on top continuously instead of only right after the
+            # next playback frame.
+            from src.dashboard.win32_embed import bring_to_absolute_top
+
+            bring_to_absolute_top(int(self.qt_window.alert_container.winId()))
+            if self.qt_window.threat_toast.isVisible():
+                bring_to_absolute_top(int(self.qt_window.threat_toast.winId()))
 
     def run(self, capture_sequence: str | None = None, capture_every: int = 10):
         self.qt_window.show()

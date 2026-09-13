@@ -11,7 +11,12 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QFont
 from src.dashboard.dashboard_state import FrameState
-from src.dashboard.win32_embed import resize_child
+from src.dashboard.win32_embed import bring_to_absolute_top, resize_child
+from src.dashboard.track_labels import (
+    track_distance_m,
+    tracked_object_row_text,
+    zone_object_counts,
+)
 
 # Real resolution-zone spec (src/07_adaptive_2point5d_map.py SPEC_ZONES_100M),
 # quoted directly for the System Details drawer -- not re-derived or guessed.
@@ -171,6 +176,64 @@ class Open3DEmbedWidget(QWidget):
         super().resizeEvent(event)
         if self.child_hwnd:
             resize_child(self.child_hwnd, self.width(), self.height())
+
+    # Box colors from open3d_viewer.py: blue for Dynamic, purple for Static.
+    _LABEL_COLORS = {True: "#0080ff", False: "#9933cc"}
+
+    def set_track_labels(self, labels) -> None:
+        """Place one class label above each tracked box.
+
+        `labels` are TrackLabel records projected by the Open3D process from
+        the same TrackState list its boxes were drawn from. Each label is its
+        own native window: the reparented OpenGL window is a native child
+        HWND, and non-native Qt widgets cannot paint over it.
+        """
+        if not hasattr(self, "_label_widgets"):
+            self._label_widgets = {}
+
+        seen = set()
+        for lab in labels:
+            seen.add(lab.track_id)
+            widget = self._label_widgets.get(lab.track_id)
+            if widget is None:
+                widget = QLabel(self)
+                widget.setAttribute(Qt.WA_NativeWindow, True)
+                widget.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+                self._label_widgets[lab.track_id] = widget
+
+            if not lab.visible:
+                widget.hide()
+                continue
+
+            color = self._LABEL_COLORS[lab.dynamic]
+            widget.setStyleSheet(
+                f"background-color: rgba(10,10,20,215); color: white; "
+                f"border: 1px solid {color}; border-radius: 3px; "
+                f"padding: 1px 4px; font-size: 10px; font-weight: bold;"
+            )
+            widget.setText(lab.text)
+            widget.adjustSize()
+
+            # The Open3D framebuffer can differ in size from this panel mid-resize.
+            sx = self.width() / max(1, lab.view_width)
+            sy = self.height() / max(1, lab.view_height)
+            x = int(round(lab.u * sx - widget.width() / 2))
+            y = int(round(lab.v * sy - widget.height() - 4))
+            widget.move(x, y)
+            widget.show()
+            widget.raise_()
+
+        for track_id in list(self._label_widgets):
+            if track_id not in seen:
+                self._label_widgets.pop(track_id).deleteLater()
+
+    def visible_label_texts(self) -> dict[int, str]:
+        """track_id -> text for labels currently shown."""
+        return {
+            tid: w.text()
+            for tid, w in getattr(self, "_label_widgets", {}).items()
+            if w.isVisible()
+        }
 
 
 class ElevationProfileWidget(QWidget):
@@ -429,6 +492,12 @@ class FoveaXDashboardWindow(QMainWindow):
         self.threat_toast.hide()
 
         self.alert_container = QWidget(central_widget)
+        # See the matching comment in _build_threat_toast: this must be a
+        # real native window, or its raise_() can never out-rank the
+        # embedded Open3D view / per-track label widgets, which Windows
+        # always composites above a parent's own painted (non-native)
+        # content regardless of Qt's alien-widget stacking order.
+        self.alert_container.setAttribute(Qt.WA_NativeWindow, True)
         self.alert_layout = QVBoxLayout(self.alert_container)
         self.alert_layout.setContentsMargins(0, 0, 0, 0)
         self.alert_layout.setSpacing(6)
@@ -680,6 +749,22 @@ class FoveaXDashboardWindow(QMainWindow):
         res_group.setLayout(res_layout)
         layout.addWidget(res_group)
 
+        # Real per-zone tracked-object counts (same Near/Middle/Far
+        # boundaries as the spec panel above -- see
+        # src/dashboard/track_labels.py::zone_object_counts), refreshed each
+        # frame in update_ui from state.tracks. Zero objects in a zone is
+        # shown as "0", not hidden -- this is a real count, not a filtered
+        # highlight list.
+        zone_group = QGroupBox("OBJECTS PER ZONE (live)")
+        zone_layout = QVBoxLayout()
+        self._zone_labels: dict[str, QLabel] = {}
+        for name, rng, _res in RESOLUTION_ZONES:
+            lbl = QLabel(f"{name} ({rng}): 0")
+            zone_layout.addWidget(lbl)
+            self._zone_labels[name] = lbl
+        zone_group.setLayout(zone_layout)
+        layout.addWidget(zone_group)
+
         layout.addStretch(1)
         return panel
 
@@ -790,8 +875,10 @@ class FoveaXDashboardWindow(QMainWindow):
 
         hazard_group = QGroupBox("HAZARD CLUSTERS (connected components)")
         hazard_layout = QVBoxLayout()
-        self.hazard_table = QTableWidget(0, 4)
-        self.hazard_table.setHorizontalHeaderLabels(["Dist (m)", "Min Trav.", "Severity", "Conf."])
+        self.hazard_table = QTableWidget(0, 6)
+        self.hazard_table.setHorizontalHeaderLabels(
+            ["Dist (m)", "Min Trav.", "Severity", "Conf.", "Kind", "Depth/Height (m)"]
+        )
         self.hazard_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.hazard_table.verticalHeader().setVisible(False)
         hazard_layout.addWidget(self.hazard_table)
@@ -923,6 +1010,15 @@ class FoveaXDashboardWindow(QMainWindow):
         toast.setFixedWidth(340)
         toast.setMinimumHeight(50)
         toast.move(250, 115)
+        # A plain (non-native) widget's raise_() only reorders it among
+        # other alien widgets sharing the same backing store -- it cannot
+        # out-rank a real native child window (the reparented Open3D view,
+        # or the per-track label widgets in Open3DEmbedWidget, both
+        # WA_NativeWindow), which Windows always composites on top of a
+        # parent's own painted content regardless of Qt's stacking order.
+        # Making this widget itself native lets its raise_() actually issue
+        # a real Win32 z-order change against those siblings.
+        toast.setAttribute(Qt.WA_NativeWindow, True)
         return toast
 
     def _build_system_drawer(self, parent):
@@ -1032,7 +1128,7 @@ class FoveaXDashboardWindow(QMainWindow):
             
         self.alert_container.adjustSize()
         self.alert_container.show()
-        self.alert_container.raise_()
+        bring_to_absolute_top(int(self.alert_container.winId()))
 
     # ------------------------------------------------------------------
     # Data wiring
@@ -1084,27 +1180,19 @@ class FoveaXDashboardWindow(QMainWindow):
             self.lbl_m_gpu.setText("N/A")
             self.lbl_m_vram.setText("N/A")
 
+        # 1b. Real per-zone object counts (same tracks as the list below).
+        counts = zone_object_counts(state.tracks)
+        for name, rng, _res in RESOLUTION_ZONES:
+            self._zone_labels[name].setText(f"{name} ({rng}): {counts[name]}")
+
         # 2. Update Tracked Objects List + nearest dynamic threat
         self.list_tracks.clear()
         nearest_dynamic = None
         nearest_dist = None
         for t in state.tracks:
-            speed = np.linalg.norm(t.state[3:6])
-            dyn_str = "Dynamic" if t.dynamic else "Static"
-            # Display-only fix: a track already correctly classified
-            # Static (either too few real hits to trust its velocity
-            # estimate yet, or a real-world-immobile class gated by
-            # _STATIC_ONLY_CLASSES -- see multi_object_tracker.py) can
-            # still carry a real nonzero raw Kalman speed estimate
-            # (confirmed on real data: 0.3-2.9 m/s, noisy/transient).
-            # Showing that raw number next to "Static" reads as
-            # contradictory. The classification itself is untouched --
-            # only what's displayed for an already-Static track changes.
-            displayed_speed = 0.0 if not t.dynamic else speed
-            item_text = f"ID: {t.track_id} | {t.class_name} | {dyn_str} | {displayed_speed:.1f} m/s"
-            self.list_tracks.addItem(item_text)
+            self.list_tracks.addItem(tracked_object_row_text(t))
             if t.dynamic:
-                dist = float(np.hypot(t.state[0], t.state[1]))
+                dist = track_distance_m(t)
                 if nearest_dist is None or dist < nearest_dist:
                     nearest_dist = dist
                     nearest_dynamic = t
@@ -1121,7 +1209,7 @@ class FoveaXDashboardWindow(QMainWindow):
             )
             self.threat_toast.adjustSize()
             self.threat_toast.show()
-            self.threat_toast.raise_()
+            bring_to_absolute_top(int(self.threat_toast.winId()))
         else:
             self.lbl_threat.setText("No dynamic objects tracked.")
             self.threat_toast.hide()
@@ -1253,6 +1341,11 @@ class FoveaXDashboardWindow(QMainWindow):
                 sev_item.setForeground(QColor(COLOR_CAUTION))
             self.hazard_table.setItem(row, 2, sev_item)
             self.hazard_table.setItem(row, 3, QTableWidgetItem(f"{c['confidence']*100:.0f}%"))
+            self.hazard_table.setItem(row, 4, QTableWidgetItem(c.get("kind", "Rough")))
+            extent = c.get("extent_m")
+            self.hazard_table.setItem(
+                row, 5, QTableWidgetItem(f"{extent:.2f}" if extent is not None else "N/A")
+            )
 
     def _render_overhead_to_label(self, trav_grid, overhead_grid):
         """Render the OVERHEAD layer: real terrain coloring for ordinary

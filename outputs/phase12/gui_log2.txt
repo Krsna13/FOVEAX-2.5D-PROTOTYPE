@@ -1,0 +1,14 @@
+C:\FOVEAX 2.5D\FOVEAX_2.5D_TRAIL\src\13_realtime_dashboard.py:159: UserWarning: MockObjectDetector is a deterministic GEOMETRIC baseline, NOT an AI / trained object detector.  Detections are clusters of points above the ground plane and carry class_name='unknown_obstacle'. Do not use these results for safety claims.
+  detector = MockObjectDetector()
+C:\FOVEAX 2.5D\FOVEAX_2.5D_TRAIL\src\dashboard\data_streamer.py:613: UserWarning: MockObjectDetector is a deterministic GEOMETRIC baseline, NOT an AI / trained object detector.  Detections are clusters of points above the ground plane and carry class_name='unknown_obstacle'. Do not use these results for safety claims.
+  detections = self.detector.detect(points, timestamp_s=timestamp_s, semantic_labels=semantic_labels)
+C:\FOVEAX 2.5D\FOVEAX_2.5D_TRAIL\src\dashboard\data_streamer.py:613: UserWarning: MockObjectDetector is a deterministic GEOMETRIC baseline, NOT an AI / trained object detector.  Detections are clusters of points above the ground plane and carry class_name='unknown_obstacle'. Do not use these results for safety claims.
+  detections = self.detector.detect(points, timestamp_s=timestamp_s, semantic_labels=semantic_labels)
+[INFO] Open3D 3D view embedded into the main dashboard window.
+QWindowsWindow::setGeometry: Unable to set geometry 1920x1113+0+29 (frame: 1938x1160-9-9) on QWidgetWindow/"FoveaXDashboardWindowClassWindow" on "\\.\DISPLAY1". Resulting geometry: 1920x1111+0+29 (frame: 1938x1158-9-9) margins: 9, 38, 9, 9 minimum size: 1229x1113 MINMAXINFO maxSize=0,0 maxpos=0,0 mintrack=1247,1160 maxtrack=0,0)
+[WARNING] COORDINATE FRAME WARNING: track 1379 at (-56.7, 37.2) falls outside the raw point cloud bounds.
+[WARNING] COORDINATE FRAME WARNING: track 1811 at (-3.2, -64.9) falls outside the raw point cloud bounds.
+[WARNING] COORDINATE FRAME WARNING: track 2323 at (-53.7, 0.9) falls outside the raw point cloud bounds.
+[WARNING] COORDINATE FRAME WARNING: track 2308 at (-11.9, 59.9) falls outside the raw point cloud bounds.
+[WARNING] COORDINATE FRAME WARNING: track 2308 at (-11.1, 60.0) falls outside the raw point cloud bounds.
+[WARNING] COORDINATE FRAME WARNING: track 2308 at (-10.7, 60.1) falls outside the raw point cloud bounds.

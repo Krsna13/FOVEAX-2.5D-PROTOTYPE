@@ -1,13 +1,15 @@
 import numpy as np
 import open3d as o3d
 from src.dashboard.dashboard_state import FrameState
+from src.dashboard.track_labels import build_track_labels
 
 class FoveaX3DViewer:
     """Wrapper for Open3D non-blocking visualizer."""
 
-    def __init__(self, window_name: str = "FOVEAX Phase 9 - 3D Dashboard", width: int = 1280, height: int = 720):
+    def __init__(self, window_name: str = "FOVEAX Phase 9 - 3D Dashboard", width: int = 1280, height: int = 720,
+                 visible: bool = True):
         self.vis = o3d.visualization.Visualizer()
-        self.vis.create_window(window_name=window_name, width=width, height=height)
+        self.vis.create_window(window_name=window_name, width=width, height=height, visible=visible)
         
         # Geometries
         self.pcd = o3d.geometry.PointCloud()
@@ -15,7 +17,11 @@ class FoveaX3DViewer:
         # We will keep a dictionary of LineSets for tracking boxes
         # track_id -> LineSet
         self.track_boxes = {}
-        
+
+        # The exact TrackState list the current boxes were drawn from. Labels
+        # are built only from this, so they always describe the boxes on screen.
+        self.drawn_tracks = []
+
         # Flag to track if geometries were added
         self.pcd_added = False
         
@@ -168,6 +174,19 @@ class FoveaX3DViewer:
                 self.track_boxes[t.track_id] = new_lineset
                 self.vis.add_geometry(new_lineset, reset_bounding_box=False)
 
+        self.drawn_tracks = list(state.tracks)
+
+    def compute_track_labels(self):
+        """Project a label anchor for every drawn box with the live camera."""
+        params = self.view_control.convert_to_pinhole_camera_parameters()
+        return build_track_labels(
+            self.drawn_tracks,
+            params.intrinsic.intrinsic_matrix,
+            params.extrinsic,
+            params.intrinsic.width,
+            params.intrinsic.height,
+        )
+
     def poll_events(self):
         """Must be called periodically to keep the Open3D window responsive."""
         self.vis.poll_events()
@@ -176,7 +195,21 @@ class FoveaX3DViewer:
     def destroy(self):
         self.vis.destroy_window()
 
-def run_open3d_process(queue, ready_queue=None, window_name: str = "FOVEAX Phase 9 - 3D Dashboard"):
+def _publish_labels(label_queue, labels):
+    """Hand the newest labels to the Qt process, dropping any it hasn't read."""
+    try:
+        while not label_queue.empty():
+            label_queue.get_nowait()
+    except Exception:
+        pass
+    try:
+        label_queue.put_nowait(labels)
+    except Exception:
+        pass
+
+
+def run_open3d_process(queue, ready_queue=None, window_name: str = "FOVEAX Phase 9 - 3D Dashboard",
+                       label_queue=None):
     """Standalone process function to run Open3D.
 
     If ready_queue is given, this attempts to locate this process's own
@@ -211,6 +244,7 @@ def run_open3d_process(queue, ready_queue=None, window_name: str = "FOVEAX Phase
 
     # We run our own event loop here
     quit_requested = False
+    last_label_key = None
     while True:
         try:
             # Drain the queue each tick: apply every real-time camera
@@ -237,6 +271,20 @@ def run_open3d_process(queue, ready_queue=None, window_name: str = "FOVEAX Phase
             pass
             
         viewer.poll_events()
+
+        # Recomputed every tick, not just on new frames: mouse drags and the
+        # dashboard's camera buttons move the view without a new FrameState.
+        if label_queue is not None:
+            try:
+                labels = viewer.compute_track_labels()
+                key = tuple((l.track_id, l.text, round(l.u), round(l.v), l.visible,
+                             l.view_width, l.view_height) for l in labels)
+                if key != last_label_key:
+                    _publish_labels(label_queue, labels)
+                    last_label_key = key
+            except Exception:
+                pass
+
         # Small sleep or let poll_events dictate loop speed. 
         # Open3D poll_events is usually fast, we can add a small sleep to avoid 100% CPU.
         import time

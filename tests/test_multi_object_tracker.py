@@ -1227,3 +1227,70 @@ class TestClassGatedDynamicFlag:
         tracker.update([det], timestamp_s=5 * 0.1)
         assert tracker.tracks[0].class_name == "VEGETATION"
         assert bool(tracker.tracks[0].dynamic) is False
+
+
+class TestMetadataPassthrough:
+    """Detection3D.metadata carries real geometric features computed by
+    DataStreamerThread._attach_terrain_features (slope_deg, is_overhang,
+    is_probable_rock -- see src/perception/terrain_features.py). The
+    tracker must pass this through unmodified: it doesn't compute, alter,
+    or invent any of it."""
+
+    def test_new_track_receives_detection_metadata(self) -> None:
+        tracker = MultiObjectTracker()
+        det = Detection3D(
+            center_xyz=np.array([1.0, 0.0, 0.5], dtype=np.float32),
+            size_lwh=np.array([1.0, 1.0, 1.0], dtype=np.float32),
+            yaw_rad=0.0, class_id=1, class_name="ROUGH_TERRAIN",
+            confidence=0.9, source="mock",
+            metadata={"slope_deg": 12.5},
+        )
+        tracks = tracker.update([det], timestamp_s=0.0)
+        assert tracks[0].metadata == {"slope_deg": 12.5}
+
+    def test_matched_track_metadata_refreshes_each_frame(self) -> None:
+        """Metadata must reflect only the current frame's real detection --
+        not accumulate or retain a stale value from a prior match."""
+        tracker = MultiObjectTracker()
+        det1 = Detection3D(
+            center_xyz=np.array([1.0, 0.0, 0.5], dtype=np.float32),
+            size_lwh=np.array([1.0, 1.0, 1.0], dtype=np.float32),
+            yaw_rad=0.0, class_id=1, class_name="ROUGH_TERRAIN",
+            confidence=0.9, source="mock", metadata={"slope_deg": 5.0},
+        )
+        tracker.update([det1], timestamp_s=0.0)
+
+        det2 = Detection3D(
+            center_xyz=np.array([1.05, 0.0, 0.5], dtype=np.float32),
+            size_lwh=np.array([1.0, 1.0, 1.0], dtype=np.float32),
+            yaw_rad=0.0, class_id=1, class_name="ROUGH_TERRAIN",
+            confidence=0.9, source="mock", metadata={},
+        )
+        tracks = tracker.update([det2], timestamp_s=0.1)
+        assert tracks[0].metadata == {}
+
+    def test_no_metadata_defaults_to_empty_dict_not_none(self) -> None:
+        tracker = MultiObjectTracker()
+        det = Detection3D(
+            center_xyz=np.array([1.0, 0.0, 0.5], dtype=np.float32),
+            size_lwh=np.array([1.0, 1.0, 1.0], dtype=np.float32),
+            yaw_rad=0.0, class_id=1, class_name="VEHICLE",
+            confidence=0.9, source="mock",
+        )
+        tracks = tracker.update([det], timestamp_s=0.0)
+        assert tracks[0].metadata == {}
+
+    def test_metadata_cleared_when_track_goes_unmatched(self) -> None:
+        """A missed frame has no real detection to derive features from --
+        a track must not keep showing a feature from a frame it wasn't
+        actually re-observed in."""
+        tracker = MultiObjectTracker(max_missed_frames=5)
+        det = Detection3D(
+            center_xyz=np.array([1.0, 0.0, 0.5], dtype=np.float32),
+            size_lwh=np.array([1.0, 1.0, 1.0], dtype=np.float32),
+            yaw_rad=0.0, class_id=1, class_name="ROUGH_TERRAIN",
+            confidence=0.9, source="mock", metadata={"slope_deg": 9.0},
+        )
+        tracker.update([det], timestamp_s=0.0)
+        tracks = tracker.update([], timestamp_s=0.1)
+        assert tracks[0].metadata == {}

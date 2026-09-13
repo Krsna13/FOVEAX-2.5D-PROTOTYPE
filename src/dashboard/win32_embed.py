@@ -94,6 +94,33 @@ def reparent_as_child(child_hwnd: int, parent_hwnd: int, width: int, height: int
     )
 
 
+def bring_to_absolute_top(hwnd: int) -> None:
+    """Force `hwnd` to the very top of the real Win32 sibling stacking order.
+
+    Qt's own `QWidget.raise_()` only reorders paint priority among plain
+    ("alien") widgets sharing a backing store; it does not reliably out-rank
+    a *native* child window (a real HWND -- the reparented Open3D view, or
+    any QWidget with WA_NativeWindow set, such as the per-track label
+    widgets), because those are actual OS windows composited independently
+    of Qt's own paint order. `hwnd` must itself be a real window (its owner
+    should call `winId()` first to force one) for this to have any effect on
+    it. Best-effort: swallows errors since this can be called from a hot
+    per-frame path where raising must never break playback.
+    """
+    if not WIN32_AVAILABLE or not hwnd:
+        return
+    try:
+        SWP_NOMOVE = 0x0002
+        SWP_NOSIZE = 0x0001
+        SWP_NOACTIVATE = 0x0010
+        HWND_TOP = 0
+        win32gui.SetWindowPos(
+            hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+        )
+    except Exception:
+        pass
+
+
 def resize_child(child_hwnd: int, width: int, height: int) -> None:
     """Resize an already-reparented child window to fill (width, height).
 

@@ -73,6 +73,55 @@ class DataStreamerThread(QThread):
             except pynvml.NVMLError:
                 HAS_PYNVML = False
 
+    def _attach_terrain_features(self, detections: list, points: np.ndarray) -> None:
+        """Compute real geometric features per detection and stash them in
+        `det.metadata`, so the tracker (and, from there, the display layer)
+        can surface them without recomputing or guessing.
+
+        Every feature here is derived from this detection's own real member
+        points (selected from the real frame point cloud, including the
+        ground points MockObjectDetector itself discards before clustering
+        -- needed here to estimate real local ground height) via
+        src/perception/terrain_features.py. A feature is simply absent from
+        metadata when there isn't enough real data to support it (e.g. a
+        one-point detection can't support a plane fit) -- never a
+        placeholder value.
+        """
+        from src.perception.terrain_features import (
+            ground_clearance_m,
+            is_overhang,
+            is_probable_rock_heuristic,
+            local_ground_z_percentile,
+            points_in_oriented_box,
+            slope_angle_deg,
+        )
+
+        ground_like = {"DRIVABLE_GROUND", "ROUGH_TERRAIN"}
+
+        for d in detections:
+            member_mask = points_in_oriented_box(points, d.center_xyz, d.size_lwh)
+            member_xyz = points[member_mask, :3]
+            metadata: dict = {}
+
+            if d.class_name in ground_like:
+                slope = slope_angle_deg(member_xyz)
+                if slope is not None:
+                    metadata["slope_deg"] = slope
+
+            ground_z = local_ground_z_percentile(points, d.center_xyz[:2], radius_m=1.5)
+            if ground_z is not None:
+                bbox_bottom_z = float(d.center_xyz[2] - d.size_lwh[2] / 2.0)
+                clearance = ground_clearance_m(bbox_bottom_z, ground_z)
+                metadata["ground_clearance_m"] = clearance
+                metadata["is_overhang"] = is_overhang(clearance, d.class_name)
+
+            volume_m3 = float(d.size_lwh[0] * d.size_lwh[1] * d.size_lwh[2])
+            metadata["is_probable_rock"] = is_probable_rock_heuristic(
+                volume_m3, int(member_mask.sum()), d.class_name
+            )
+
+            d.metadata.update(metadata)
+
     def _generate_maps(self, points: np.ndarray, tracks: list) -> dict:
         """Generate simple 2D grid maps for dashboard visualization."""
         x = points[:, 0]
@@ -240,6 +289,9 @@ class DataStreamerThread(QThread):
         hazard_clusters = []
         try:
             from scipy import ndimage
+
+            from src.perception.terrain_features import classify_hazard_kind
+
             blocked = np.nan_to_num(traversability, nan=1.0) < 0.40
             labeled, n_clusters = ndimage.label(blocked)
             cell_area_m2 = self.grid_res ** 2
@@ -257,6 +309,19 @@ class DataStreamerThread(QThread):
                 world_y = y_min + (centroid_row + 0.5) * self.grid_res
                 distance_m = float(np.hypot(world_x, world_y))
                 severity = "Critical" if min_trav < 0.20 else "Caution"
+
+                # Real Pothole/Bump classification: this cluster's own real
+                # min/max elevation vs. a real local baseline taken from the
+                # real occupied ring of cells immediately around it
+                # (dilate minus the cluster itself) -- never the cluster's
+                # own cells, or a dip would be compared against itself.
+                dilated = ndimage.binary_dilation(cmask, iterations=2)
+                ring = dilated & ~cmask & occupied_2d
+                baseline_z = float(np.nanmedian(elevation[ring])) if np.any(ring) else None
+                z_max_local = float(np.nanmax(elevation[cmask]))
+                z_min_local = float(np.nanmin(z_min_2d[cmask]))
+                kind, extent_m = classify_hazard_kind(z_max_local, z_min_local, baseline_z)
+
                 hazard_clusters.append({
                     "cluster_id": cluster_id,
                     "x": round(world_x, 3),
@@ -266,6 +331,8 @@ class DataStreamerThread(QThread):
                     "min_traversability": round(min_trav, 3),
                     "severity": severity,
                     "confidence": round(confidence, 3),
+                    "kind": kind,
+                    "extent_m": round(extent_m, 3) if extent_m is not None else None,
                 })
             hazard_clusters.sort(key=lambda c: c["distance_m"])
         except ImportError:
@@ -555,6 +622,8 @@ class DataStreamerThread(QThread):
                 )
                 d.class_id = cid
                 d.class_name = cname
+
+        self._attach_terrain_features(detections, points)
 
         tracks = self.tracker.update(detections, timestamp_s=timestamp_s)
 

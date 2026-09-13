@@ -4,69 +4,216 @@ Class weights: DRIVABLE_GROUND=39.62, ROUGH_TERRAIN=2.35, VEGETATION=1.96, BUILD
 Backbone transfer: 310 tensors loaded, re-initialised: ['logits.bias', 'logits.weight']
 C:\FOVEAX 2.5D\FOVEAX_2.5D_TRAIL\external\SalsaNext\train\common\warmupLR.py:50: UserWarning: Detected call of `lr_scheduler.step()` before `optimizer.step()`. In PyTorch 1.1.0 and later, you should call them in the opposite order: `optimizer.step()` before `lr_scheduler.step()`.  Failure to do this will result in PyTorch skipping the first value of the learning rate schedule. See more details at https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
   return self.initial_scheduler.step(epoch)
-Resumed from models\salsanext\rellis3d_finetuned\last.pt at epoch 1
+C:\FOVEAX 2.5D\FOVEAX_2.5D_TRAIL\external\SalsaNext\train\common\warmupLR.py:48: UserWarning: Detected call of `lr_scheduler.step()` before `optimizer.step()`. In PyTorch 1.1.0 and later, you should call them in the opposite order: `optimizer.step()` before `lr_scheduler.step()`.  Failure to do this will result in PyTorch skipping the first value of the learning rate schedule. See more details at https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
+  return super(warmupLR, self).step(epoch)
+Resumed from models\salsanext\rellis3d_finetuned\last.pt at epoch 3
 Training: 10 epochs, batch=2, lr=0.01, 2266 steps/epoch, device=cuda
-  epoch 1 step 100/2266 loss=0.5786 lr=0.01000
-  epoch 1 step 200/2266 loss=0.5878 lr=0.00999
-  epoch 1 step 300/2266 loss=0.5696 lr=0.00999
-  epoch 1 step 400/2266 loss=0.5583 lr=0.00998
-  epoch 1 step 500/2266 loss=0.5518 lr=0.00998
-  epoch 1 step 600/2266 loss=0.5452 lr=0.00997
-  epoch 1 step 700/2266 loss=0.5478 lr=0.00997
-  epoch 1 step 800/2266 loss=0.5473 lr=0.00996
-  epoch 1 step 900/2266 loss=0.5444 lr=0.00996
-  epoch 1 step 1000/2266 loss=0.5481 lr=0.00996
-  epoch 1 step 1100/2266 loss=0.5517 lr=0.00995
-  epoch 1 step 1200/2266 loss=0.5496 lr=0.00995
-  epoch 1 step 1300/2266 loss=0.5473 lr=0.00994
-  epoch 1 step 1400/2266 loss=0.5452 lr=0.00994
-  epoch 1 step 1500/2266 loss=0.5453 lr=0.00993
-  epoch 1 step 1600/2266 loss=0.5436 lr=0.00993
-  epoch 1 step 1700/2266 loss=0.5399 lr=0.00992
-  epoch 1 step 1800/2266 loss=0.5361 lr=0.00992
-  epoch 1 step 1900/2266 loss=0.5321 lr=0.00992
-  epoch 1 step 2000/2266 loss=0.5295 lr=0.00991
-  epoch 1 step 2100/2266 loss=0.5281 lr=0.00991
-  epoch 1 step 2200/2266 loss=0.5316 lr=0.00990
-EPOCH 1: loss=0.5350 val_acc=86.55% train=12.2min val=16s peak_vram=3767MB
-    DRIVABLE_GROUND  recall= 93.83%  n=515,820
-    ROUGH_TERRAIN    recall= 88.98%  n=4,944,279
-    VEGETATION       recall= 83.85%  n=6,396,482
-    SOLID_OBSTACLE   recall= 84.38%  n=19,202
-    VEHICLE          recall= 78.29%  n=8,319
-    PEDESTRIAN       recall= 95.66%  n=169,663
+  epoch 3 step 100/2266 loss=0.4119 lr=0.00980
+  epoch 3 step 200/2266 loss=0.4253 lr=0.00979
+  epoch 3 step 300/2266 loss=0.4225 lr=0.00979
+  epoch 3 step 400/2266 loss=0.4194 lr=0.00978
+  epoch 3 step 500/2266 loss=0.4188 lr=0.00978
+  epoch 3 step 600/2266 loss=0.4153 lr=0.00977
+  epoch 3 step 700/2266 loss=0.4168 lr=0.00977
+  epoch 3 step 800/2266 loss=0.4162 lr=0.00977
+  epoch 3 step 900/2266 loss=0.4143 lr=0.00976
+  epoch 3 step 1000/2266 loss=0.4128 lr=0.00976
+  epoch 3 step 1100/2266 loss=0.4201 lr=0.00975
+  epoch 3 step 1200/2266 loss=0.4183 lr=0.00975
+  epoch 3 step 1300/2266 loss=0.4179 lr=0.00974
+  epoch 3 step 1400/2266 loss=0.4185 lr=0.00974
+  epoch 3 step 1500/2266 loss=0.4193 lr=0.00974
+  epoch 3 step 1600/2266 loss=0.4183 lr=0.00973
+  epoch 3 step 1700/2266 loss=0.4170 lr=0.00973
+  epoch 3 step 1800/2266 loss=0.4151 lr=0.00972
+  epoch 3 step 1900/2266 loss=0.4136 lr=0.00972
+  epoch 3 step 2000/2266 loss=0.4130 lr=0.00971
+  epoch 3 step 2100/2266 loss=0.4122 lr=0.00971
+  epoch 3 step 2200/2266 loss=0.4117 lr=0.00971
+EPOCH 3: loss=0.4109 val_acc=87.77% train=8.2min val=8s peak_vram=3767MB
+    DRIVABLE_GROUND  recall= 95.20%  n=515,820
+    ROUGH_TERRAIN    recall= 86.84%  n=4,944,279
+    VEGETATION       recall= 87.67%  n=6,396,482
+    SOLID_OBSTACLE   recall= 89.29%  n=19,202
+    VEHICLE          recall= 93.38%  n=8,319
+    PEDESTRIAN       recall= 95.67%  n=169,663
     new best val accuracy -> models\salsanext\rellis3d_finetuned\best.pt
-  epoch 2 step 100/2266 loss=0.5238 lr=0.00990
-  epoch 2 step 200/2266 loss=0.5184 lr=0.00989
-  epoch 2 step 300/2266 loss=0.5107 lr=0.00989
-  epoch 2 step 400/2266 loss=0.5029 lr=0.00988
-  epoch 2 step 500/2266 loss=0.4965 lr=0.00988
-  epoch 2 step 600/2266 loss=0.4970 lr=0.00987
-  epoch 2 step 700/2266 loss=0.4946 lr=0.00987
-  epoch 2 step 800/2266 loss=0.4929 lr=0.00986
-  epoch 2 step 900/2266 loss=0.5008 lr=0.00986
-  epoch 2 step 1000/2266 loss=0.5003 lr=0.00986
-  epoch 2 step 1100/2266 loss=0.5006 lr=0.00985
-  epoch 2 step 1200/2266 loss=0.5058 lr=0.00985
-  epoch 2 step 1300/2266 loss=0.5111 lr=0.00984
-  epoch 2 step 1400/2266 loss=0.5133 lr=0.00984
-  epoch 2 step 1500/2266 loss=0.5094 lr=0.00983
-  epoch 2 step 1600/2266 loss=0.5078 lr=0.00983
-  epoch 2 step 1700/2266 loss=0.5057 lr=0.00983
-  epoch 2 step 1800/2266 loss=0.5054 lr=0.00982
-  epoch 2 step 1900/2266 loss=0.5024 lr=0.00982
-  epoch 2 step 2000/2266 loss=0.4982 lr=0.00981
-  epoch 2 step 2100/2266 loss=0.4962 lr=0.00981
-  epoch 2 step 2200/2266 loss=0.4931 lr=0.00980
-EPOCH 2: loss=0.4908 val_acc=86.30% train=15.2min val=18s peak_vram=3767MB
-    DRIVABLE_GROUND  recall= 95.30%  n=515,820
-    ROUGH_TERRAIN    recall= 88.44%  n=4,944,279
-    VEGETATION       recall= 83.67%  n=6,396,482
-    SOLID_OBSTACLE   recall= 84.05%  n=19,202
-    VEHICLE          recall= 91.67%  n=8,319
-    PEDESTRIAN       recall= 95.75%  n=169,663
-  epoch 3 step 100/2266 loss=0.4154 lr=0.00980
-  epoch 3 step 200/2266 loss=0.4356 lr=0.00979
-  epoch 3 step 300/2266 loss=0.4268 lr=0.00979
-  epoch 3 step 400/2266 loss=0.4333 lr=0.00978
-  epoch 3 step 500/2266 loss=0.4370 lr=0.00978
+  epoch 4 step 100/2266 loss=0.3738 lr=0.00970
+  epoch 4 step 200/2266 loss=0.3824 lr=0.00969
+  epoch 4 step 300/2266 loss=0.3916 lr=0.00969
+  epoch 4 step 400/2266 loss=0.3980 lr=0.00969
+  epoch 4 step 500/2266 loss=0.3985 lr=0.00968
+  epoch 4 step 600/2266 loss=0.4044 lr=0.00968
+  epoch 4 step 700/2266 loss=0.4011 lr=0.00967
+  epoch 4 step 800/2266 loss=0.4073 lr=0.00967
+  epoch 4 step 900/2266 loss=0.4062 lr=0.00966
+  epoch 4 step 1000/2266 loss=0.4072 lr=0.00966
+  epoch 4 step 1100/2266 loss=0.4074 lr=0.00966
+  epoch 4 step 1200/2266 loss=0.4080 lr=0.00965
+  epoch 4 step 1300/2266 loss=0.4075 lr=0.00965
+  epoch 4 step 1400/2266 loss=0.4053 lr=0.00964
+  epoch 4 step 1500/2266 loss=0.4011 lr=0.00964
+  epoch 4 step 1600/2266 loss=0.3997 lr=0.00963
+  epoch 4 step 1700/2266 loss=0.3985 lr=0.00963
+  epoch 4 step 1800/2266 loss=0.3986 lr=0.00963
+  epoch 4 step 1900/2266 loss=0.3979 lr=0.00962
+  epoch 4 step 2000/2266 loss=0.3961 lr=0.00962
+  epoch 4 step 2100/2266 loss=0.3949 lr=0.00961
+  epoch 4 step 2200/2266 loss=0.3929 lr=0.00961
+EPOCH 4: loss=0.3913 val_acc=88.87% train=8.1min val=6s peak_vram=3767MB
+    DRIVABLE_GROUND  recall= 95.10%  n=515,820
+    ROUGH_TERRAIN    recall= 89.96%  n=4,944,279
+    VEGETATION       recall= 87.34%  n=6,396,482
+    SOLID_OBSTACLE   recall= 91.52%  n=19,202
+    VEHICLE          recall= 91.90%  n=8,319
+    PEDESTRIAN       recall= 95.83%  n=169,663
+    new best val accuracy -> models\salsanext\rellis3d_finetuned\best.pt
+  epoch 5 step 100/2266 loss=0.3528 lr=0.00960
+  epoch 5 step 200/2266 loss=0.3712 lr=0.00960
+  epoch 5 step 300/2266 loss=0.3632 lr=0.00959
+  epoch 5 step 400/2266 loss=0.3681 lr=0.00959
+  epoch 5 step 500/2266 loss=0.3694 lr=0.00958
+  epoch 5 step 600/2266 loss=0.3679 lr=0.00958
+  epoch 5 step 700/2266 loss=0.3642 lr=0.00958
+  epoch 5 step 800/2266 loss=0.3667 lr=0.00957
+  epoch 5 step 900/2266 loss=0.3679 lr=0.00957
+  epoch 5 step 1000/2266 loss=0.3711 lr=0.00956
+  epoch 5 step 1100/2266 loss=0.3724 lr=0.00956
+  epoch 5 step 1200/2266 loss=0.3702 lr=0.00955
+  epoch 5 step 1300/2266 loss=0.3684 lr=0.00955
+  epoch 5 step 1400/2266 loss=0.3672 lr=0.00955
+  epoch 5 step 1500/2266 loss=0.3658 lr=0.00954
+  epoch 5 step 1600/2266 loss=0.3656 lr=0.00954
+  epoch 5 step 1700/2266 loss=0.3658 lr=0.00953
+  epoch 5 step 1800/2266 loss=0.3651 lr=0.00953
+  epoch 5 step 1900/2266 loss=0.3648 lr=0.00953
+  epoch 5 step 2000/2266 loss=0.3668 lr=0.00952
+  epoch 5 step 2100/2266 loss=0.3664 lr=0.00952
+  epoch 5 step 2200/2266 loss=0.3664 lr=0.00951
+EPOCH 5: loss=0.3659 val_acc=87.76% train=8.2min val=6s peak_vram=3767MB
+    DRIVABLE_GROUND  recall= 93.88%  n=515,820
+    ROUGH_TERRAIN    recall= 86.37%  n=4,944,279
+    VEGETATION       recall= 88.11%  n=6,396,482
+    SOLID_OBSTACLE   recall= 93.04%  n=19,202
+    VEHICLE          recall= 94.01%  n=8,319
+    PEDESTRIAN       recall= 95.89%  n=169,663
+  epoch 6 step 100/2266 loss=0.3664 lr=0.00951
+  epoch 6 step 200/2266 loss=0.3477 lr=0.00950
+  epoch 6 step 300/2266 loss=0.3492 lr=0.00950
+  epoch 6 step 400/2266 loss=0.3468 lr=0.00949
+  epoch 6 step 500/2266 loss=0.3452 lr=0.00949
+  epoch 6 step 600/2266 loss=0.3565 lr=0.00948
+  epoch 6 step 700/2266 loss=0.3528 lr=0.00948
+  epoch 6 step 800/2266 loss=0.3529 lr=0.00948
+  epoch 6 step 900/2266 loss=0.3530 lr=0.00947
+  epoch 6 step 1000/2266 loss=0.3497 lr=0.00947
+  epoch 6 step 1100/2266 loss=0.3477 lr=0.00946
+  epoch 6 step 1200/2266 loss=0.3484 lr=0.00946
+  epoch 6 step 1300/2266 loss=0.3554 lr=0.00946
+  epoch 6 step 1400/2266 loss=0.3568 lr=0.00945
+  epoch 6 step 1500/2266 loss=0.3687 lr=0.00945
+  epoch 6 step 1600/2266 loss=0.3806 lr=0.00944
+  epoch 6 step 1700/2266 loss=0.3837 lr=0.00944
+  epoch 6 step 1800/2266 loss=0.3851 lr=0.00943
+  epoch 6 step 1900/2266 loss=0.3844 lr=0.00943
+  epoch 6 step 2000/2266 loss=0.3836 lr=0.00943
+  epoch 6 step 2100/2266 loss=0.3830 lr=0.00942
+  epoch 6 step 2200/2266 loss=0.3817 lr=0.00942
+EPOCH 6: loss=0.3806 val_acc=87.52% train=8.2min val=6s peak_vram=3767MB
+    DRIVABLE_GROUND  recall= 95.35%  n=515,820
+    ROUGH_TERRAIN    recall= 83.60%  n=4,944,279
+    VEGETATION       recall= 89.70%  n=6,396,482
+    SOLID_OBSTACLE   recall= 91.02%  n=19,202
+    VEHICLE          recall= 84.61%  n=8,319
+    PEDESTRIAN       recall= 95.87%  n=169,663
+  epoch 7 step 100/2266 loss=0.3330 lr=0.00941
+  epoch 7 step 200/2266 loss=0.3869 lr=0.00941
+  epoch 7 step 300/2266 loss=0.5426 lr=0.00940
+  epoch 7 step 400/2266 loss=0.5639 lr=0.00940
+  epoch 7 step 500/2266 loss=0.5492 lr=0.00939
+  epoch 7 step 600/2266 loss=0.5380 lr=0.00939
+  epoch 7 step 700/2266 loss=0.5157 lr=0.00939
+  epoch 7 step 800/2266 loss=0.4993 lr=0.00938
+  epoch 7 step 900/2266 loss=0.4853 lr=0.00938
+  epoch 7 step 1000/2266 loss=0.4750 lr=0.00937
+  epoch 7 step 1100/2266 loss=0.4643 lr=0.00937
+  epoch 7 step 1200/2266 loss=0.4540 lr=0.00936
+  epoch 7 step 1300/2266 loss=0.4449 lr=0.00936
+  epoch 7 step 1400/2266 loss=0.4378 lr=0.00936
+  epoch 7 step 1500/2266 loss=0.4322 lr=0.00935
+  epoch 7 step 1600/2266 loss=0.4268 lr=0.00935
+  epoch 7 step 1700/2266 loss=0.4218 lr=0.00934
+  epoch 7 step 1800/2266 loss=0.4209 lr=0.00934
+  epoch 7 step 1900/2266 loss=0.4179 lr=0.00934
+  epoch 7 step 2000/2266 loss=0.4156 lr=0.00933
+  epoch 7 step 2100/2266 loss=0.4133 lr=0.00933
+  epoch 7 step 2200/2266 loss=0.4137 lr=0.00932
+EPOCH 7: loss=0.4147 val_acc=88.41% train=8.2min val=6s peak_vram=3767MB
+    DRIVABLE_GROUND  recall= 93.83%  n=515,820
+    ROUGH_TERRAIN    recall= 87.06%  n=4,944,279
+    VEGETATION       recall= 88.82%  n=6,396,482
+    SOLID_OBSTACLE   recall= 90.37%  n=19,202
+    VEHICLE          recall= 88.23%  n=8,319
+    PEDESTRIAN       recall= 95.52%  n=169,663
+  epoch 8 step 100/2266 loss=0.4675 lr=0.00932
+  epoch 8 step 200/2266 loss=0.4379 lr=0.00931
+  epoch 8 step 300/2266 loss=0.5133 lr=0.00931
+  epoch 8 step 400/2266 loss=0.4962 lr=0.00930
+  epoch 8 step 500/2266 loss=0.4746 lr=0.00930
+  epoch 8 step 600/2266 loss=0.4570 lr=0.00930
+  epoch 8 step 700/2266 loss=0.4448 lr=0.00929
+  epoch 8 step 800/2266 loss=0.4384 lr=0.00929
+  epoch 8 step 900/2266 loss=0.4292 lr=0.00928
+  epoch 8 step 1000/2266 loss=0.4199 lr=0.00928
+  epoch 8 step 1100/2266 loss=0.4133 lr=0.00928
+  epoch 8 step 1200/2266 loss=0.4095 lr=0.00927
+  epoch 8 step 1300/2266 loss=0.4029 lr=0.00927
+  epoch 8 step 1400/2266 loss=0.3973 lr=0.00926
+  epoch 8 step 1500/2266 loss=0.3933 lr=0.00926
+  epoch 8 step 1600/2266 loss=0.3896 lr=0.00925
+  epoch 8 step 1700/2266 loss=0.3852 lr=0.00925
+  epoch 8 step 1800/2266 loss=0.3829 lr=0.00925
+  epoch 8 step 1900/2266 loss=0.3826 lr=0.00924
+  epoch 8 step 2000/2266 loss=0.3800 lr=0.00924
+  epoch 8 step 2100/2266 loss=0.3780 lr=0.00923
+  epoch 8 step 2200/2266 loss=0.3751 lr=0.00923
+EPOCH 8: loss=0.3744 val_acc=88.47% train=8.1min val=6s peak_vram=3767MB
+    DRIVABLE_GROUND  recall= 95.03%  n=515,820
+    ROUGH_TERRAIN    recall= 88.22%  n=4,944,279
+    VEGETATION       recall= 87.95%  n=6,396,482
+    SOLID_OBSTACLE   recall= 90.91%  n=19,202
+    VEHICLE          recall= 87.10%  n=8,319
+    PEDESTRIAN       recall= 95.44%  n=169,663
+  epoch 9 step 100/2266 loss=0.3487 lr=0.00922
+  epoch 9 step 200/2266 loss=0.3319 lr=0.00922
+  epoch 9 step 300/2266 loss=0.3272 lr=0.00922
+  epoch 9 step 400/2266 loss=0.3291 lr=0.00921
+  epoch 9 step 500/2266 loss=0.3265 lr=0.00921
+  epoch 9 step 600/2266 loss=0.3267 lr=0.00920
+  epoch 9 step 700/2266 loss=0.3270 lr=0.00920
+  epoch 9 step 800/2266 loss=0.3279 lr=0.00919
+  epoch 9 step 900/2266 loss=0.3286 lr=0.00919
+  epoch 9 step 1000/2266 loss=0.3280 lr=0.00919
+  epoch 9 step 1100/2266 loss=0.3268 lr=0.00918
+  epoch 9 step 1200/2266 loss=0.3253 lr=0.00918
+  epoch 9 step 1300/2266 loss=0.3236 lr=0.00917
+  epoch 9 step 1400/2266 loss=0.3217 lr=0.00917
+  epoch 9 step 1500/2266 loss=0.3234 lr=0.00917
+  epoch 9 step 1600/2266 loss=0.3233 lr=0.00916
+  epoch 9 step 1700/2266 loss=0.3235 lr=0.00916
+  epoch 9 step 1800/2266 loss=0.3223 lr=0.00915
+  epoch 9 step 1900/2266 loss=0.3225 lr=0.00915
+  epoch 9 step 2000/2266 loss=0.3224 lr=0.00915
+  epoch 9 step 2100/2266 loss=0.3219 lr=0.00914
+  epoch 9 step 2200/2266 loss=0.3217 lr=0.00914
+EPOCH 9: loss=0.3220 val_acc=89.05% train=8.2min val=6s peak_vram=3767MB
+    DRIVABLE_GROUND  recall= 94.19%  n=515,820
+    ROUGH_TERRAIN    recall= 91.11%  n=4,944,279
+    VEGETATION       recall= 86.86%  n=6,396,482
+    SOLID_OBSTACLE   recall= 91.79%  n=19,202
+    VEHICLE          recall= 95.49%  n=8,319
+    PEDESTRIAN       recall= 95.25%  n=169,663
+    new best val accuracy -> models\salsanext\rellis3d_finetuned\best.pt
+
+Done. Best val accuracy: 89.05%
+Checkpoints: models\salsanext\rellis3d_finetuned/epoch_XXX.pt, last.pt, best.pt

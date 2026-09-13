@@ -28,6 +28,12 @@ a live PyQt5 + Open3D dashboard.
   <p><a href="docs/assets/foveax_dashboard_demo.mp4">▶️ <b>Watch / Download Full HD Demo Video (MP4)</b></a></p>
 </div>
 
+### Output
+
+| NON-DRIVABLE CAUTION AREA | OBJECT DETECTION | NEARBY OBJECT ALERT | DRIVABLE REGION |
+| :---: | :---: | :---: | :---: |
+| <img src="docs/assets/NON-DRIVABLE%20CAUTION%20AREA.png" alt="NON-DRIVABLE CAUTION AREA" width="100%" /> | <img src="docs/assets/OBJECT%20DETECTION.png" alt="OBJECT DETECTION" width="100%" /> | <img src="docs/assets/NEARBY%20OBJECT%20ALERT.png" alt="NEARBY OBJECT ALERT" width="100%" /> | <img src="docs/assets/DRIVABLE%20REGION.png" alt="DRIVABLE REGION" width="100%" /> |
+
 ---
 
 ## Table of Contents
