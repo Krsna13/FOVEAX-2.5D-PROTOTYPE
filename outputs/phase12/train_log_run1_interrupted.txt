@@ -1,0 +1,54 @@
+Split: train=4532 val=162 test=2847 (test sequence held out entirely)
+Loaded class frequencies from outputs\phase12\class_frequencies.json (4532 frames)
+Class weights: DRIVABLE_GROUND=39.62, ROUGH_TERRAIN=2.35, VEGETATION=1.96, BUILDING_WALL=1000.00, SOLID_OBSTACLE=50.79, VEHICLE=726.00, PEDESTRIAN=44.29, UNKNOWN=0.00
+Backbone transfer: 310 tensors loaded, re-initialised: ['logits.bias', 'logits.weight']
+C:\FOVEAX 2.5D\FOVEAX_2.5D_TRAIL\external\SalsaNext\train\common\warmupLR.py:50: UserWarning: Detected call of `lr_scheduler.step()` before `optimizer.step()`. In PyTorch 1.1.0 and later, you should call them in the opposite order: `optimizer.step()` before `lr_scheduler.step()`.  Failure to do this will result in PyTorch skipping the first value of the learning rate schedule. See more details at https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
+  return self.initial_scheduler.step(epoch)
+--resume auto: no last.pt found, starting fresh.
+Training: 10 epochs, batch=2, lr=0.01, 2266 steps/epoch, device=cuda
+  epoch 0 step 100/2266 loss=2.5296 lr=0.00045
+  epoch 0 step 200/2266 loss=2.0177 lr=0.00089
+  epoch 0 step 300/2266 loss=1.6912 lr=0.00133
+  epoch 0 step 400/2266 loss=1.4920 lr=0.00177
+  epoch 0 step 500/2266 loss=1.3672 lr=0.00221
+  epoch 0 step 600/2266 loss=1.2721 lr=0.00265
+  epoch 0 step 700/2266 loss=1.1982 lr=0.00309
+  epoch 0 step 800/2266 loss=1.1332 lr=0.00353
+  epoch 0 step 900/2266 loss=1.0822 lr=0.00398
+  epoch 0 step 1000/2266 loss=1.0398 lr=0.00442
+  epoch 0 step 1100/2266 loss=1.0071 lr=0.00486
+  epoch 0 step 1200/2266 loss=0.9814 lr=0.00530
+  epoch 0 step 1300/2266 loss=0.9614 lr=0.00574
+  epoch 0 step 1400/2266 loss=0.9426 lr=0.00618
+  epoch 0 step 1500/2266 loss=0.9256 lr=0.00662
+  epoch 0 step 1600/2266 loss=0.9088 lr=0.00707
+  epoch 0 step 1700/2266 loss=0.8906 lr=0.00751
+  epoch 0 step 1800/2266 loss=0.8757 lr=0.00795
+  epoch 0 step 1900/2266 loss=0.8596 lr=0.00839
+  epoch 0 step 2000/2266 loss=0.8558 lr=0.00883
+  epoch 0 step 2100/2266 loss=0.8543 lr=0.00927
+  epoch 0 step 2200/2266 loss=0.8483 lr=0.00971
+EPOCH 0: loss=0.8431 val_acc=84.99% train=16.6min val=20s peak_vram=3741MB
+    DRIVABLE_GROUND  recall= 96.21%  n=515,820
+    ROUGH_TERRAIN    recall= 91.14%  n=4,944,279
+    VEGETATION       recall= 79.03%  n=6,396,482
+    SOLID_OBSTACLE   recall= 90.68%  n=19,202
+    VEHICLE          recall= 91.87%  n=8,319
+    PEDESTRIAN       recall= 94.96%  n=169,663
+    new best val accuracy -> models\salsanext\rellis3d_finetuned\best.pt
+  epoch 1 step 100/2266 loss=0.6301 lr=0.01000
+  epoch 1 step 200/2266 loss=0.6206 lr=0.00999
+  epoch 1 step 300/2266 loss=0.6106 lr=0.00999
+  epoch 1 step 400/2266 loss=0.6095 lr=0.00998
+  epoch 1 step 500/2266 loss=0.6049 lr=0.00998
+  epoch 1 step 600/2266 loss=0.5980 lr=0.00997
+  epoch 1 step 700/2266 loss=0.6193 lr=0.00997
+  epoch 1 step 800/2266 loss=0.6490 lr=0.00996
+  epoch 1 step 900/2266 loss=0.6493 lr=0.00996
+  epoch 1 step 1000/2266 loss=0.6420 lr=0.00996
+  epoch 1 step 1100/2266 loss=0.6316 lr=0.00995
+  epoch 1 step 1200/2266 loss=0.6236 lr=0.00995
+  epoch 1 step 1300/2266 loss=0.6163 lr=0.00994
+  epoch 1 step 1400/2266 loss=0.6116 lr=0.00994
+  epoch 1 step 1500/2266 loss=0.6027 lr=0.00993
+  epoch 1 step 1600/2266 loss=0.6009 lr=0.00993

@@ -425,30 +425,36 @@ class DashboardApplication:
         free-floating top-level window in that case (the pre-existing
         behavior), and nothing else about the app's operation changes.
         """
-        from src.dashboard.win32_embed import reparent_as_child
+        # The Open3D child must spawn, import torch/open3d and create its GLFW
+        # window before it can report a handle -- routinely well over 8s on a
+        # loaded GPU. A short blocking wait here gave up early and left the
+        # 3D view floating, so poll on a QTimer inside the running event loop
+        # instead, for as long as the child itself keeps searching.
+        self._reparent_deadline = time.time() + 60.0
+        self._reparent_timer = QTimer()
+        self._reparent_timer.setInterval(100)
+        self._reparent_timer.timeout.connect(self._poll_reparent)
+        self._reparent_timer.start()
 
-        # Poll rather than a single blocking get(timeout=...): this method
-        # runs after self.qt_window.show() but before self.app.exec_(), so
-        # nothing is pumping the Qt event loop yet -- a plain blocking wait
-        # here would make the just-shown window appear frozen/unresponsive
-        # for up to the full timeout. processEvents() between polls keeps
-        # it painting/responsive while we wait for the child's handle.
-        child_hwnd = None
-        deadline = time.time() + 8.0
-        while time.time() < deadline:
-            try:
-                child_hwnd = self._ready_queue.get_nowait()
-                break
-            except Exception:
-                pass
-            self.app.processEvents()
-            time.sleep(0.05)
-
-        if not child_hwnd:
-            print("[INFO] Could not locate the Open3D window handle in time -- "
-                  "showing it as a separate floating window instead (unchanged "
-                  "prior behavior).")
+    def _poll_reparent(self):
+        try:
+            child_hwnd = self._ready_queue.get_nowait()
+        except Exception:
+            if time.time() > self._reparent_deadline:
+                self._reparent_timer.stop()
+                print("[WARNING] Open3D window handle never arrived -- the 3D view "
+                      "stays a separate floating window.", flush=True)
             return
+
+        self._reparent_timer.stop()
+        if not child_hwnd:
+            print("[WARNING] Open3D child could not find its own window -- the 3D "
+                  "view stays a separate floating window.", flush=True)
+            return
+        self._embed_child(child_hwnd)
+
+    def _embed_child(self, child_hwnd: int):
+        from src.dashboard.win32_embed import reparent_as_child
 
         try:
             embed_widget = self.qt_window.embed_widget
@@ -459,10 +465,10 @@ class DashboardApplication:
             reparent_as_child(child_hwnd, parent_hwnd, embed_widget.width(), embed_widget.height())
             embed_widget.child_hwnd = child_hwnd
             self._embedded = True
-            print("[INFO] Open3D 3D view embedded into the main dashboard window.")
+            print("[INFO] Open3D 3D view embedded into the main dashboard window.", flush=True)
         except Exception as e:
             print(f"[WARNING] Reparenting the Open3D window failed ({e!r}); "
-                  "it will remain a separate floating window instead.")
+                  "it will remain a separate floating window instead.", flush=True)
 
     def run(self, capture_sequence: str | None = None, capture_every: int = 10):
         self.qt_window.show()

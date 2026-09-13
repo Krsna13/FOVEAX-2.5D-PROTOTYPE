@@ -1,0 +1,63 @@
+{
+  "n_frames": 4532,
+  "total_supervised_pixels": 304947301,
+  "ignore_index": 7,
+  "classes": [
+    {
+      "class_id": 0,
+      "name": "DRIVABLE_GROUND",
+      "pixels": 7392631,
+      "fraction": 0.024242323102246444,
+      "weight": 39.616004943847656
+    },
+    {
+      "class_id": 1,
+      "name": "ROUGH_TERRAIN",
+      "pixels": 129567888,
+      "fraction": 0.424886160904241,
+      "weight": 2.3480453491210938
+    },
+    {
+      "class_id": 2,
+      "name": "VEGETATION",
+      "pixels": 155592571,
+      "fraction": 0.5102277360375785,
+      "weight": 1.9560754299163818
+    },
+    {
+      "class_id": 3,
+      "name": "BUILDING_WALL",
+      "pixels": 0,
+      "fraction": 0.0,
+      "weight": 1000.0
+    },
+    {
+      "class_id": 4,
+      "name": "SOLID_OBSTACLE",
+      "pixels": 5698555,
+      "fraction": 0.018687015695213516,
+      "weight": 50.794898986816406
+    },
+    {
+      "class_id": 5,
+      "name": "VEHICLE",
+      "pixels": 115093,
+      "fraction": 0.0003774193102302617,
+      "weight": 725.995361328125
+    },
+    {
+      "class_id": 6,
+      "name": "PEDESTRIAN",
+      "pixels": 6580563,
+      "fraction": 0.021579344950490315,
+      "weight": 44.288265228271484
+    },
+    {
+      "class_id": 7,
+      "name": "UNKNOWN",
+      "pixels": 0,
+      "fraction": 0.0,
+      "weight": 0.0
+    }
+  ]
+}

@@ -26,7 +26,7 @@ import torch.nn as nn
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.perception.salsanext_predictor import SalsaNextPredictor
-from src.perception.semantic_labels import SEMANTICKITTI_TO_FOVEAX
+from src.perception.semantic_labels import NUM_FOVEAX_CLASSES, SEMANTICKITTI_TO_FOVEAX
 
 # Real values from models/salsanext/pretrained/pretrained/arch_cfg.yaml,
 # but with a small image so tests stay fast. fov/means/stds are the real ones.
@@ -211,4 +211,72 @@ class TestDomainAdaptation:
         prediction = predictor.predict(points)
         assert prediction.class_ids.shape == (16,)
         assert np.all(prediction.class_ids == SEMANTICKITTI_TO_FOVEAX[40])
+
+
+class TestFoveaxTaxonomyHead:
+    """A head fine-tuned on RELLIS-3D emits FOVEAX class IDs directly."""
+
+    def _foveax_predictor(self, class_id: int, tmp_path: Path) -> SalsaNextPredictor:
+        predictor = _make_predictor(
+            _ConstantClassModel(class_id=class_id, n_classes=NUM_FOVEAX_CLASSES),
+            tmp_path,
+        )
+        predictor.taxonomy = "foveax"
+        predictor._learning_map_inv = None
+        return predictor
+
+    def test_rejects_unknown_taxonomy(self, tmp_path: Path) -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        ckpt = tmp_path / "c"
+        ckpt.touch()
+        cfg = tmp_path / "a.yaml"
+        cfg.touch()
+        with pytest.raises(ValueError, match="taxonomy"):
+            SalsaNextPredictor(
+                repo_path=repo,
+                checkpoint_path=ckpt,
+                config_path=cfg,
+                device="cpu",
+                strict=True,
+                taxonomy="kitti",
+            )
+
+    def test_default_taxonomy_is_semantickitti(self, tmp_path: Path) -> None:
+        assert _make_predictor(_ConstantClassModel(9), tmp_path).taxonomy == (
+            "semantickitti"
+        )
+
+    @pytest.mark.parametrize("foveax_id", [0, 1, 2, 4, 5, 6])
+    def test_argmax_passes_through_unmapped(
+        self, foveax_id: int, tmp_path: Path
+    ) -> None:
+        """No learning_map_inv / SEMANTICKITTI_TO_FOVEAX remap is applied --
+        applying either to an already-FOVEAX head would corrupt the class."""
+        predictor = self._foveax_predictor(foveax_id, tmp_path)
+        prediction = predictor.predict(_sample_points(24))
+        assert np.all(prediction.class_ids == foveax_id)
+
+    def test_source_label(self, tmp_path: Path) -> None:
+        predictor = self._foveax_predictor(2, tmp_path)
+        assert predictor.predict(_sample_points(8)).source == (
+            "salsanext_rellis3d_finetuned"
+        )
+
+    def test_unprojected_points_become_unknown_not_drivable_ground(
+        self, tmp_path: Path
+    ) -> None:
+        """Regression: FOVEAX class 0 is DRIVABLE_GROUND, so the
+        SemanticKITTI fallback of 0 for points that never reached a pixel
+        would label unobserved space as *drivable*. They must fall back to
+        UNKNOWN (7)."""
+        points = _sample_points(16)
+        # Zero-range padding points are excluded from the projection entirely.
+        points[:4, :3] = 0.0
+
+        predictor = self._foveax_predictor(0, tmp_path)
+        prediction = predictor.predict(points)
+
+        assert np.all(prediction.class_ids[:4] == 7)
+        assert np.all(prediction.class_ids[4:] == 0)
 

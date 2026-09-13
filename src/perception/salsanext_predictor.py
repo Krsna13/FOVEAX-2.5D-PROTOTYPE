@@ -20,6 +20,7 @@ from src.perception.semantic_labels import (
 )
 from src.perception.range_projection import (
     project_points_to_range_image,
+    rescale_intensity_to_unit_range,
     reproject_labels_to_points,
 )
 from src.perception.semantic_predictor import (
@@ -63,6 +64,7 @@ class SalsaNextPredictor(SemanticPredictor):
         fov_up: float | None = None,
         fov_down: float | None = None,
         rescale_intensity: bool = False,
+        taxonomy: str = "semantickitti",
     ):
         """Initialise the SalsaNext adapter.
 
@@ -76,7 +78,19 @@ class SalsaNextPredictor(SemanticPredictor):
             fov_up: Optional override for vertical FOV up in degrees (e.g. 17.02 for Ouster OS1-64).
             fov_down: Optional override for vertical FOV down in degrees (e.g. -16.44 for Ouster OS1-64).
             rescale_intensity: If True, min-max normalize non-zero point intensities to [0, 1].
+            taxonomy: Output taxonomy of the checkpoint's head.
+                'semantickitti' (default) is the official 20-class pretrained
+                head, whose predictions are mapped back through
+                learning_map_inv and SEMANTICKITTI_TO_FOVEAX.
+                'foveax' is a head trained directly on the 8 FOVEAX classes
+                (see src/14_finetune_salsanext.py), whose argmax already *is*
+                a FOVEAX class ID, so neither mapping applies.
         """
+        if taxonomy not in ("semantickitti", "foveax"):
+            raise ValueError(
+                f"taxonomy must be 'semantickitti' or 'foveax', got {taxonomy!r}"
+            )
+        self.taxonomy = taxonomy
         self.repo_path = Path(repo_path)
         self.checkpoint_path = Path(checkpoint_path)
         self.config_path = Path(config_path)
@@ -182,21 +196,28 @@ class SalsaNextPredictor(SemanticPredictor):
             # parser.py:97) derives it instead from data_cfg.yaml, which ships
             # alongside arch_cfg.yaml in the same downloaded model directory:
             #     self.nclasses = len(self.learning_map_inv)
-            data_cfg_path = self.config_path.parent / "data_cfg.yaml"
-            if not data_cfg_path.is_file():
-                raise FileNotFoundError(
-                    f"SalsaNext data_cfg.yaml not found at {data_cfg_path} "
-                    "(expected as a sibling of config_path -- this is where "
-                    "the official pretrained-model download places it "
-                    "alongside arch_cfg.yaml)."
-                )
-            with open(data_cfg_path, "r") as f:
-                data_cfg = yaml.safe_load(f)
-            num_classes = len(data_cfg["learning_map_inv"])
-            # learning_map_inv turns the model's 0..19 training classes back
-            # into real SemanticKITTI IDs (10=car, 30=person, ...), which is
-            # what SEMANTICKITTI_TO_FOVEAX is keyed on.
-            self._learning_map_inv = data_cfg["learning_map_inv"]
+            if self.taxonomy == "foveax":
+                # A FOVEAX-taxonomy head emits the 8 FOVEAX classes directly,
+                # so there is no learning_map_inv to undo and no data_cfg.yaml
+                # to read -- the class count is fixed by the taxonomy itself.
+                num_classes = NUM_FOVEAX_CLASSES
+                self._learning_map_inv = None
+            else:
+                data_cfg_path = self.config_path.parent / "data_cfg.yaml"
+                if not data_cfg_path.is_file():
+                    raise FileNotFoundError(
+                        f"SalsaNext data_cfg.yaml not found at {data_cfg_path} "
+                        "(expected as a sibling of config_path -- this is where "
+                        "the official pretrained-model download places it "
+                        "alongside arch_cfg.yaml)."
+                    )
+                with open(data_cfg_path, "r") as f:
+                    data_cfg = yaml.safe_load(f)
+                num_classes = len(data_cfg["learning_map_inv"])
+                # learning_map_inv turns the model's 0..19 training classes back
+                # into real SemanticKITTI IDs (10=car, 30=person, ...), which is
+                # what SEMANTICKITTI_TO_FOVEAX is keyed on.
+                self._learning_map_inv = data_cfg["learning_map_inv"]
 
             # Import the SalsaNext network definition. Verified directly
             # against the real cloned repository: the class lives in
@@ -270,17 +291,9 @@ class SalsaNextPredictor(SemanticPredictor):
 
         points_to_project = points.copy()
         if eff_rescale:
-            # Rescale intensity on valid (non-zero range) points to [0, 1]
-            depth = np.linalg.norm(points_to_project[:, :3], axis=1)
-            valid_idx = np.flatnonzero(depth > 0.0)
-            if valid_idx.size > 0:
-                intensities = points_to_project[valid_idx, 3]
-                i_min = float(intensities.min())
-                i_max = float(intensities.max())
-                if i_max > i_min:
-                    points_to_project[valid_idx, 3] = (intensities - i_min) / (i_max - i_min)
-                else:
-                    points_to_project[valid_idx, 3] = 0.0
+            # Shared with the fine-tuning data pipeline so train-time and
+            # inference-time preprocessing cannot drift apart.
+            rescale_intensity_to_unit_range(points_to_project)
 
         # --- 1. Spherical range-image projection (upstream-faithful) ---
         projection = project_points_to_range_image(
@@ -311,8 +324,15 @@ class SalsaNextPredictor(SemanticPredictor):
         # which learning_map_inv maps back to SemanticKITTI 0 -> FOVEAX
         # UNKNOWN. Points with no pixel therefore end up UNKNOWN without
         # fabricating a class for them.
+        # In the 'foveax' taxonomy the model's own class 0 is DRIVABLE_GROUND,
+        # not "unlabeled", so falling back to 0 for points that never reached a
+        # pixel would fabricate a *drivable* label for unobserved space. Those
+        # points must fall back to FOVEAX UNKNOWN (7) instead.
+        invalid_train_id = (
+            _FOVEAX_UNKNOWN if self.taxonomy == "foveax" else _UNKNOWN_TRAIN_ID
+        )
         point_train_ids = reproject_labels_to_points(
-            pixel_train_ids, projection, invalid_label=_UNKNOWN_TRAIN_ID
+            pixel_train_ids, projection, invalid_label=invalid_train_id
         )
         point_confidence = reproject_labels_to_points(
             pixel_confidence.astype(np.float32), projection, invalid_label=0.0
@@ -322,21 +342,27 @@ class SalsaNextPredictor(SemanticPredictor):
         ).astype(np.float32)
 
         # --- 4. Taxonomy: model train IDs -> SemanticKITTI IDs -> FOVEAX ---
-        # learning_map_inv undoes the training-time class collapse (e.g.
-        # train class 1 -> SemanticKITTI 10 "car"), then the existing,
-        # already-tested SEMANTICKITTI_TO_FOVEAX table does the rest. No new
-        # mapping table is introduced here.
-        max_train_id = max(self._learning_map_inv)
-        inv_lut = np.zeros(max_train_id + 1, dtype=np.int32)
-        for train_id, kitti_id in self._learning_map_inv.items():
-            inv_lut[train_id] = kitti_id
-        point_kitti_ids = inv_lut[point_train_ids]
+        if self.taxonomy == "foveax":
+            # The head was trained on FOVEAX classes, so its argmax already is
+            # a FOVEAX class ID. Applying learning_map_inv or
+            # SEMANTICKITTI_TO_FOVEAX here would corrupt it.
+            class_ids = point_train_ids.astype(np.uint8)
+        else:
+            # learning_map_inv undoes the training-time class collapse (e.g.
+            # train class 1 -> SemanticKITTI 10 "car"), then the existing,
+            # already-tested SEMANTICKITTI_TO_FOVEAX table does the rest. No new
+            # mapping table is introduced here.
+            max_train_id = max(self._learning_map_inv)
+            inv_lut = np.zeros(max_train_id + 1, dtype=np.int32)
+            for train_id, kitti_id in self._learning_map_inv.items():
+                inv_lut[train_id] = kitti_id
+            point_kitti_ids = inv_lut[point_train_ids]
 
-        max_kitti_id = max(SEMANTICKITTI_TO_FOVEAX)
-        foveax_lut = np.full(max_kitti_id + 1, _FOVEAX_UNKNOWN, dtype=np.uint8)
-        for kitti_id, foveax_id in SEMANTICKITTI_TO_FOVEAX.items():
-            foveax_lut[kitti_id] = foveax_id
-        class_ids = foveax_lut[point_kitti_ids]
+            max_kitti_id = max(SEMANTICKITTI_TO_FOVEAX)
+            foveax_lut = np.full(max_kitti_id + 1, _FOVEAX_UNKNOWN, dtype=np.uint8)
+            for kitti_id, foveax_id in SEMANTICKITTI_TO_FOVEAX.items():
+                foveax_lut[kitti_id] = foveax_id
+            class_ids = foveax_lut[point_kitti_ids]
 
         # Points that resolved to UNKNOWN carry no usable confidence, matching
         # GroundTruthSemanticPredictor's convention for its own UNKNOWN points.
@@ -357,7 +383,11 @@ class SalsaNextPredictor(SemanticPredictor):
             class_ids=class_ids,
             confidence=np.clip(point_confidence, 0.0, 1.0).astype(np.float32),
             uncertainty=np.clip(point_uncertainty, 0.0, 1.0).astype(np.float32),
-            source="salsanext_pretrained",
+            source=(
+                "salsanext_rellis3d_finetuned"
+                if self.taxonomy == "foveax"
+                else "salsanext_pretrained"
+            ),
             class_confidence=class_confidence,
         )
         validate_prediction(prediction, num_points)

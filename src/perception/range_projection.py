@@ -56,6 +56,34 @@ class RangeProjection:
     proj_idx: np.ndarray
 
 
+def rescale_intensity_to_unit_range(points: np.ndarray) -> None:
+    """Min-max rescale intensity of non-zero-range points to [0, 1], in place.
+
+    RELLIS-3D's Ouster intensities are ~0.0001-0.03, while the SalsaNext
+    checkpoint's training domain (SemanticKITTI/Velodyne) is ~0-1. Without
+    this the remission channel lands far outside the distribution the
+    checkpoint's img_means/img_stds were computed for.
+
+    Shared by inference (`SalsaNextPredictor.predict`) and training
+    (`src/training/rellis3d_dataset.py`) so the two cannot drift apart --
+    a divergence here silently breaks fine-tune transfer.
+
+    Zero-range points are left untouched: they are padding, excluded from the
+    projection entirely, and including them would skew the min/max.
+    """
+    depth = np.linalg.norm(points[:, :3], axis=1)
+    valid_idx = np.flatnonzero(depth > 0.0)
+    if valid_idx.size == 0:
+        return
+    intensities = points[valid_idx, 3]
+    i_min = float(intensities.min())
+    i_max = float(intensities.max())
+    if i_max > i_min:
+        points[valid_idx, 3] = (intensities - i_min) / (i_max - i_min)
+    else:
+        points[valid_idx, 3] = 0.0
+
+
 def project_points_to_range_image(
     points: np.ndarray,
     arch_cfg: dict[str, Any],

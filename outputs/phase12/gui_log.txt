@@ -1,0 +1,7 @@
+C:\FOVEAX 2.5D\FOVEAX_2.5D_TRAIL\src\13_realtime_dashboard.py:154: UserWarning: MockObjectDetector is a deterministic GEOMETRIC baseline, NOT an AI / trained object detector.  Detections are clusters of points above the ground plane and carry class_name='unknown_obstacle'. Do not use these results for safety claims.
+  detector = MockObjectDetector()
+C:\FOVEAX 2.5D\FOVEAX_2.5D_TRAIL\src\dashboard\data_streamer.py:546: UserWarning: MockObjectDetector is a deterministic GEOMETRIC baseline, NOT an AI / trained object detector.  Detections are clusters of points above the ground plane and carry class_name='unknown_obstacle'. Do not use these results for safety claims.
+  detections = self.detector.detect(points, timestamp_s=timestamp_s, semantic_labels=semantic_labels)
+C:\FOVEAX 2.5D\FOVEAX_2.5D_TRAIL\src\dashboard\data_streamer.py:546: UserWarning: MockObjectDetector is a deterministic GEOMETRIC baseline, NOT an AI / trained object detector.  Detections are clusters of points above the ground plane and carry class_name='unknown_obstacle'. Do not use these results for safety claims.
+  detections = self.detector.detect(points, timestamp_s=timestamp_s, semantic_labels=semantic_labels)
+[INFO] Open3D 3D view embedded into the main dashboard window.

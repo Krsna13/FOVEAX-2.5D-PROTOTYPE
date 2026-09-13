@@ -40,14 +40,22 @@ def find_window_by_title(title: str, owner_pid: int | None = None) -> int | None
     """
     if not WIN32_AVAILABLE:
         return None
-    hwnd = win32gui.FindWindow(None, title)
-    if not hwnd:
-        return None
-    if owner_pid is not None:
-        _, found_pid = win32process.GetWindowThreadProcessId(hwnd)
-        if found_pid != owner_pid:
-            return None
-    return hwnd
+    if owner_pid is None:
+        return win32gui.FindWindow(None, title) or None
+
+    # FindWindow returns only the first same-titled window, so a stale or
+    # concurrent instance would hide ours; enumerate every top-level window.
+    matches: list[int] = []
+
+    def _visit(hwnd, _):
+        if win32gui.GetWindowText(hwnd) == title:
+            _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            if pid == owner_pid:
+                matches.append(hwnd)
+        return True
+
+    win32gui.EnumWindows(_visit, None)
+    return matches[0] if matches else None
 
 
 def reparent_as_child(child_hwnd: int, parent_hwnd: int, width: int, height: int) -> None:

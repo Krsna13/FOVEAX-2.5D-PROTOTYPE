@@ -197,7 +197,7 @@ def run_open3d_process(queue, ready_queue=None, window_name: str = "FOVEAX Phase
             import os
             import time as _time
             own_pid = os.getpid()
-            for _ in range(50):  # up to ~5s at 0.1s/try
+            for _ in range(300):  # up to ~30s at 0.1s/try; GLFW can be slow under GPU load
                 # own_pid guards against matching a same-titled Open3D
                 # window from a different, concurrently running instance
                 # of this dashboard -- FindWindow searches system-wide.

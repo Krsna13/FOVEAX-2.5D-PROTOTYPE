@@ -1,0 +1,72 @@
+Split: train=4532 val=162 test=2847 (test sequence held out entirely)
+Loaded class frequencies from outputs\phase12\class_frequencies.json (4532 frames)
+Class weights: DRIVABLE_GROUND=39.62, ROUGH_TERRAIN=2.35, VEGETATION=1.96, BUILDING_WALL=1000.00, SOLID_OBSTACLE=50.79, VEHICLE=726.00, PEDESTRIAN=44.29, UNKNOWN=0.00
+Backbone transfer: 310 tensors loaded, re-initialised: ['logits.bias', 'logits.weight']
+C:\FOVEAX 2.5D\FOVEAX_2.5D_TRAIL\external\SalsaNext\train\common\warmupLR.py:50: UserWarning: Detected call of `lr_scheduler.step()` before `optimizer.step()`. In PyTorch 1.1.0 and later, you should call them in the opposite order: `optimizer.step()` before `lr_scheduler.step()`.  Failure to do this will result in PyTorch skipping the first value of the learning rate schedule. See more details at https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
+  return self.initial_scheduler.step(epoch)
+Resumed from models\salsanext\rellis3d_finetuned\last.pt at epoch 1
+Training: 10 epochs, batch=2, lr=0.01, 2266 steps/epoch, device=cuda
+  epoch 1 step 100/2266 loss=0.5786 lr=0.01000
+  epoch 1 step 200/2266 loss=0.5878 lr=0.00999
+  epoch 1 step 300/2266 loss=0.5696 lr=0.00999
+  epoch 1 step 400/2266 loss=0.5583 lr=0.00998
+  epoch 1 step 500/2266 loss=0.5518 lr=0.00998
+  epoch 1 step 600/2266 loss=0.5452 lr=0.00997
+  epoch 1 step 700/2266 loss=0.5478 lr=0.00997
+  epoch 1 step 800/2266 loss=0.5473 lr=0.00996
+  epoch 1 step 900/2266 loss=0.5444 lr=0.00996
+  epoch 1 step 1000/2266 loss=0.5481 lr=0.00996
+  epoch 1 step 1100/2266 loss=0.5517 lr=0.00995
+  epoch 1 step 1200/2266 loss=0.5496 lr=0.00995
+  epoch 1 step 1300/2266 loss=0.5473 lr=0.00994
+  epoch 1 step 1400/2266 loss=0.5452 lr=0.00994
+  epoch 1 step 1500/2266 loss=0.5453 lr=0.00993
+  epoch 1 step 1600/2266 loss=0.5436 lr=0.00993
+  epoch 1 step 1700/2266 loss=0.5399 lr=0.00992
+  epoch 1 step 1800/2266 loss=0.5361 lr=0.00992
+  epoch 1 step 1900/2266 loss=0.5321 lr=0.00992
+  epoch 1 step 2000/2266 loss=0.5295 lr=0.00991
+  epoch 1 step 2100/2266 loss=0.5281 lr=0.00991
+  epoch 1 step 2200/2266 loss=0.5316 lr=0.00990
+EPOCH 1: loss=0.5350 val_acc=86.55% train=12.2min val=16s peak_vram=3767MB
+    DRIVABLE_GROUND  recall= 93.83%  n=515,820
+    ROUGH_TERRAIN    recall= 88.98%  n=4,944,279
+    VEGETATION       recall= 83.85%  n=6,396,482
+    SOLID_OBSTACLE   recall= 84.38%  n=19,202
+    VEHICLE          recall= 78.29%  n=8,319
+    PEDESTRIAN       recall= 95.66%  n=169,663
+    new best val accuracy -> models\salsanext\rellis3d_finetuned\best.pt
+  epoch 2 step 100/2266 loss=0.5238 lr=0.00990
+  epoch 2 step 200/2266 loss=0.5184 lr=0.00989
+  epoch 2 step 300/2266 loss=0.5107 lr=0.00989
+  epoch 2 step 400/2266 loss=0.5029 lr=0.00988
+  epoch 2 step 500/2266 loss=0.4965 lr=0.00988
+  epoch 2 step 600/2266 loss=0.4970 lr=0.00987
+  epoch 2 step 700/2266 loss=0.4946 lr=0.00987
+  epoch 2 step 800/2266 loss=0.4929 lr=0.00986
+  epoch 2 step 900/2266 loss=0.5008 lr=0.00986
+  epoch 2 step 1000/2266 loss=0.5003 lr=0.00986
+  epoch 2 step 1100/2266 loss=0.5006 lr=0.00985
+  epoch 2 step 1200/2266 loss=0.5058 lr=0.00985
+  epoch 2 step 1300/2266 loss=0.5111 lr=0.00984
+  epoch 2 step 1400/2266 loss=0.5133 lr=0.00984
+  epoch 2 step 1500/2266 loss=0.5094 lr=0.00983
+  epoch 2 step 1600/2266 loss=0.5078 lr=0.00983
+  epoch 2 step 1700/2266 loss=0.5057 lr=0.00983
+  epoch 2 step 1800/2266 loss=0.5054 lr=0.00982
+  epoch 2 step 1900/2266 loss=0.5024 lr=0.00982
+  epoch 2 step 2000/2266 loss=0.4982 lr=0.00981
+  epoch 2 step 2100/2266 loss=0.4962 lr=0.00981
+  epoch 2 step 2200/2266 loss=0.4931 lr=0.00980
+EPOCH 2: loss=0.4908 val_acc=86.30% train=15.2min val=18s peak_vram=3767MB
+    DRIVABLE_GROUND  recall= 95.30%  n=515,820
+    ROUGH_TERRAIN    recall= 88.44%  n=4,944,279
+    VEGETATION       recall= 83.67%  n=6,396,482
+    SOLID_OBSTACLE   recall= 84.05%  n=19,202
+    VEHICLE          recall= 91.67%  n=8,319
+    PEDESTRIAN       recall= 95.75%  n=169,663
+  epoch 3 step 100/2266 loss=0.4154 lr=0.00980
+  epoch 3 step 200/2266 loss=0.4356 lr=0.00979
+  epoch 3 step 300/2266 loss=0.4268 lr=0.00979
+  epoch 3 step 400/2266 loss=0.4333 lr=0.00978
+  epoch 3 step 500/2266 loss=0.4370 lr=0.00978
