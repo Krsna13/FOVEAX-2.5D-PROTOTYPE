@@ -1,3 +1,12 @@
+<img width="1908" height="175" alt="DEPTH AND HEIGHT" src="https://github.com/user-attachments/assets/a2fb0f08-05d6-40ae-8f90-9339815bfeaf" />
+<img width="1917" height="1120" alt="DRIVABLE REGION" src="https://github.com/user-attachments/assets/bc206e66-c639-48a4-afad-784f4265ddaf" />
+<img width="390" height="51" alt="NEARBY OBJECT ALERT" src="https://github.com/user-attachments/assets/98774e0e-e197-4af8-8a17-91427c20b468" />
+<img width="455" height="292" alt="OBJECT DETECTION" src="https://github.com/user-attachments/assets/60658905-4e3b-4c76-9077-961d5b960963" />
+<img width="1485" height="486" alt="NON-DRIVABLE CAUTION AREA" src="https://github.com/user-attachments/assets/043995d2-2662-42bc-8640-722235b72397" />
+<img width="1897" height="753" alt="OVERHEAD" src="https://github.com/user-attachments/assets/2d2c89d2-5780-4baf-b73c-b82990fbf8bb" />
+<img width="1916" height="982" alt="UNCERTANITY" src="https://github.com/user-attachments/assets/16328262-0ab1-4cbc-9fea-2f8a39eaee42" />
+<img width="1902" height="770" alt="TRAVERSABILITY" src="https://github.com/user-attachments/assets/2f8f9dff-0e5c-4e5f-aac2-d83a1fda67a3" />
+<img width="1916" height="782" alt="ELEVATION" src="https://github.com/user-attachments/assets/09d992de-f3fd-490c-8c05-08ce5f0e3d3b" />
 # FOVEAX 2.5D: Adaptive Foveated LiDAR Perception for Off-Road Terrain
 
 FOVEAX is a real-time LiDAR perception pipeline for autonomous ground
