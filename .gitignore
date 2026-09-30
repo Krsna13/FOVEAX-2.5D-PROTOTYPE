@@ -8,8 +8,22 @@ scratch.py
 # Raw data
 data/
 
-# Point cloud outputs (excludes heavy .ply files, keeps screenshots)
+# Point cloud outputs, screenshots, logs, and session data
 outputs/*.ply
+outputs/**/*.ply
+outputs/*.png
+outputs/**/*.png
+outputs/*.jsonl
+outputs/**/*.jsonl
+outputs/*.log
+outputs/**/*.log
+outputs/*log*.txt
+outputs/**/*log*.txt
+outputs/profile*.txt
+outputs/**/profile*.txt
+outputs/*.csv
+outputs/**/*.csv
+lut*.txt
 external/OpenPCDet/
 models/openpcdet/
 
