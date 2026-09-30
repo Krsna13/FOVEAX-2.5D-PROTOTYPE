@@ -350,16 +350,16 @@ class TestQtOverlay:
 
 class TestDistanceZones:
     """Boundaries must match src/10b_eval_distance_metrics.py's real
-    Near/Mid/Far buckets exactly (0-15m, 15-35m, 35-100m), and the
+    Near/Mid/Far buckets exactly (0-10m, 10-30m, 30-100m), and the
     OBJECTS PER ZONE panel must read the same real distance
     (track_distance_m) the 3D label and table already display."""
 
     @pytest.mark.parametrize(
         "dist,expected_zone",
         [
-            (0.0, "Near"), (14.99, "Near"),
-            (15.0, "Middle"), (34.99, "Middle"),
-            (35.0, "Far"), (100.0, "Far"),
+            (0.0, "Near"), (9.99, "Near"),
+            (10.0, "Middle"), (29.99, "Middle"),
+            (30.0, "Far"), (100.0, "Far"),
             (100.01, None), (500.0, None),
         ],
     )
@@ -368,14 +368,14 @@ class TestDistanceZones:
         assert distance_zone_for_track(t) == expected_zone
 
     def test_zone_uses_real_track_distance_not_a_separate_computation(self):
-        t = _track(1, "X", (6.0, 8.0, 0.0))  # hypot = 10.0 -> Near
-        assert track_distance_m(t) == pytest.approx(10.0)
+        t = _track(1, "X", (4.8, 6.4, 0.0))  # hypot = 8.0 -> Near
+        assert track_distance_m(t) == pytest.approx(8.0)
         assert distance_zone_for_track(t) == "Near"
 
     def test_counts_real_tracks_per_zone(self):
         tracks = [
             _track(1, "VEGETATION", (5.0, 0.0, 0.0)),    # Near
-            _track(2, "VEHICLE", (10.0, 0.0, 0.0)),      # Near
+            _track(2, "VEHICLE", (9.0, 0.0, 0.0)),       # Near
             _track(3, "PEDESTRIAN", (20.0, 0.0, 0.0)),   # Middle
             _track(4, "VEGETATION", (40.0, 0.0, 0.0)),   # Far
             _track(5, "VEGETATION", (200.0, 0.0, 0.0)),  # outside all zones

@@ -17,7 +17,9 @@ OpenPCDet's `main` branch frequently undergoes API and box post-processing modif
 > clone — the highest real tag is `v0.5.2`). If you see references to `v0.6.0` elsewhere, they are
 > incorrect; use `v0.5.2` as pinned here.
 
-Clone the repository and checkout the pinned tag:
+Clone the repository and checkout the pinned tag. (On the development machine it is cloned one level
+above the repo, at `C:\FOVEAX 2.5D\external\OpenPCDet`, not inside `external/`; pass
+`--openpcdet-repo` accordingly.)
 ```bash
 git clone https://github.com/open-mmlab/OpenPCDet.git external/OpenPCDet
 cd external/OpenPCDet

@@ -49,6 +49,11 @@ BEV visual output + JSONL logs + metrics
 - **`TrackState`** dataclass: track_id, class_name, state vector, covariance, size, yaw, age, hits, missed_frames, confidence, dynamic flag, source
 - **`MultiObjectTracker`**: constant-velocity 3D Kalman filter + Hungarian assignment (SciPy) / greedy fallback
 - Configurable: gating threshold, max missed frames, dynamic speed threshold, process/measurement noise
+- Dynamic flag is gated by class: tracks whose class is in `_STATIC_ONLY_CLASSES` (VEGETATION,
+  BUILDING_WALL, SOLID_OBSTACLE, DRIVABLE_GROUND, ROUGH_TERRAIN) are never flagged Dynamic, whatever
+  their measured speed. Without ego-motion compensation, vehicle motion makes static objects appear to
+  drift; this gate removed all 12 false Dynamic-VEGETATION tracks on RELLIS-3D seq `00002`
+  (`docs/validation_results.md` §4).
 
 ### src/11_object_detection_tracking.py
 

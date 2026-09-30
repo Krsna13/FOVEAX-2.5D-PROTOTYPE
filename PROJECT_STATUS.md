@@ -10,6 +10,10 @@
 > repository. Every phase status below reflects what code, tests, and generated `outputs/` artifacts
 > actually exist as of this document — not roadmap intentions.
 
+> **Last reviewed: 2026-09-30**, against the code committed on top of `f174f08`.
+> Measured numbers live in `docs/validation_results.md` (the source of truth); this document
+> summarizes them and tracks phase status.
+
 ---
 
 ## 1. Executive Summary
@@ -23,26 +27,25 @@ the core pipeline deterministic, debuggable, and cheap to run, while still allow
 segmentation (SalsaNext) and detection (PointPillars/OpenPCDet) to be dropped in where accuracy is
 needed.
 
-**Current status:** All phases (Phases 0 through 11, plus test suite and deployment benchmarks) are
-complete with working code, passing tests, and verified generated outputs on disk. **Phase 7B (real AI
-segmentation) is thoroughly exercised and quantitatively benchmarked**: the official SalsaNext repository is
-cloned, the pretrained checkpoint is downloaded and loads cleanly (312/312 weights matched), and real
-inference has been run and measured — **93.31% per-point agreement with ground truth on SemanticKITTI**, the
-checkpoint's own training domain. Cross-dataset domain adaptation has been developed and evaluated: RELLIS-3D
-(an off-road dataset) has a verified loader, class-taxonomy mapping, CLI integration, and distance-bucketed
-evaluation (`outputs/phase7/distance_accuracy_report.txt`). Sensor-level domain adaptation (+17.02°/-16.44°
-FOV + intensity rescaling) triples agreement (11.08% → 37.10% overall, jumping to 47.72% in the middle zone),
-while honestly documenting that backbones require fine-tuning for full trail autonomy. Phase 8B (real AI
-detection) has its target repository (OpenPCDet) integrated behind the pluggable `ObjectDetector` interface.
-Phase 9 (dashboard) and data streaming have been **verified end-to-end** — session telemetry
-(`outputs/phase9/session/dashboard_session.jsonl`) and publication-quality visual snapshots
-(`outputs/phase9/dashboard_semantickitti_overview.png`, `outputs/phase9/dashboard_rellis3d_overview.png`) are
-generated for both urban and off-road datasets at >17 FPS. Phase 10 (ROS 2 integration) provides complete
-packages, nodes, and launch scripts. Phase 11 (deployment/optimization) provides profiling, benchmarking,
-and hardware profiling for the NVIDIA RTX 5050 Laptop GPU (Blackwell GB207).
+**Current status:** Phases 0–9, 11 and 12 (including the Stage 6 RELLIS-3D fine-tune) are complete, with
+working code, tests, and generated outputs on disk. Phase 8B (PointPillars) is interface-only, and Phase 10
+(ROS 2) is implemented but has never run in a ROS 2 environment.
 
-**Repository state:** **302 automated unit tests pass (0 failures, 100% pass rate)**. Version control
-contains clean, phase-scoped commits covering all architecture milestones from Phase 0 through Phase 11.
+- **Semantic segmentation (Phase 7B / Stage 6):** the official SalsaNext checkpoint loads cleanly (312/312
+  weights) and scores **94.98%** on SemanticKITTI (seq 00/frame 000000, UNKNOWN excluded). On off-road
+  RELLIS-3D the held-out sequence `00000` goes **6.65%** (pretrained) → **22.26%** (Ouster FOV + intensity
+  adaptation) → **81.53%** (fine-tuned on RELLIS-3D, 8-class FOVEAX head). The fine-tuned model forgets
+  SemanticKITTI (23.97%), so both checkpoints are kept and chosen by domain.
+- **Dashboard (Phase 9):** the PyQt5 + embedded Open3D dashboard runs end to end on real RELLIS-3D and
+  SemanticKITTI data, with a pull-based playback controller (step/pause/restart/environment switch), 3D box
+  labels, per-object terrain features, overhead/centerline panels and live accuracy. Throughput is below
+  real-time targets: `process_frame()` takes 128 ms/frame (≈7.8 FPS) in the 2026-09-30 `--profile` run.
+- **Phase 11:** profiling, benchmarking and VRAM budgeting for the RTX 5050 Laptop GPU; no real TensorRT
+  engine has been compiled from a trained checkpoint yet.
+
+**Repository state:** 505 tests, all passing on the committed code (`docs/validation_results.md` §7).
+Git history has phase-scoped commits; the "OPT-n" dashboard speed-ups (about 36 ms/frame faster, but with
+known bugs) are deliberately not committed.
 
 ---
 
@@ -82,12 +85,12 @@ vehicle:
 
 | Zone | Range | Resolution | Purpose |
 |---|---|---|---|
-| Near | 0–15 m | 5 cm cells | Reactive collision avoidance |
-| Middle | 15–35 m | 20 cm cells | Path planning |
-| Far | 35–100 m | 50 cm cells | Situational awareness |
+| Near | 0–10 m | 5 cm cells | Reactive collision avoidance |
+| Middle | 10–30 m | 20 cm cells | Path planning |
+| Far | 30–100 m | 50 cm cells | Situational awareness |
 
 This means compute and memory scale with what actually matters for immediate vehicle safety, not with
-raw sensor range. Over a 200m x 200m x 8m corridor, this achieves >99.9% cell count reduction and >99.7%
+raw sensor range. Over a 200m x 200m x 8m corridor, this achieves >99.9% cell count reduction and >99.8%
 memory savings compared to an equivalent uniform 3D voxel grid at 5cm resolution.
 
 ---
@@ -132,9 +135,9 @@ scaffolding exists, core logic is a documented stub), **❌ Not Started**.
 
 ### Phase 4 — Distance-Based Adaptation — ✅ Complete
 - **Deliverable:** `src/07_adaptive_2point5d_map.py`.
-- **Technical detail:** Implements the near (0–15m, 5cm), middle (15–35m, 20cm), and far (35–100m, 50cm)
+- **Technical detail:** Implements the near (0–10m, 5cm), middle (10–30m, 20cm), and far (30–100m, 50cm)
   foveated zone system specified in the Problem Statement. Features automated theoretical memory-reduction
-  metrics against an equivalent uniform 3D voxel grid (>99.9% cell reduction, >99.7% memory byte savings).
+  metrics against an equivalent uniform 3D voxel grid (99.99% cell reduction, 99.81% memory byte savings).
 - **Generated outputs on disk:** `outputs/phase4/near_zone_map.npz`, `middle_zone_map.npz`,
   `far_zone_map.npz`, `adaptive_resolution_zones.png`, `phase4_metrics.txt`.
 
@@ -168,7 +171,14 @@ scaffolding exists, core logic is a documented stub), **❌ Not Started**.
 - **Generated outputs on disk:** `outputs/phase7/ground_truth/*` and `outputs/phase7/mock/*` both have
   full output sets (semantic maps, confidence, uncertainty, layers). `outputs/phase7/model_environment_report.txt`.
 
-### Phase 7B — Real AI Segmentation — ✅ Complete on SemanticKITTI; ⚠️ Domain-transfer failure on RELLIS-3D
+### Phase 7B — Real AI Segmentation — ✅ Complete (SemanticKITTI in-domain; RELLIS-3D via Stage 6 fine-tune)
+
+> **Update (2026-09-30):** the RELLIS-3D failure described below (as first diagnosed on 2026-09-11) was
+> resolved in two steps — sensor adaptation (22.26% with UNKNOWN excluded) and fine-tuning (81.53% on
+> held-out sequence `00000`); see Phase 12 below. The 93.3% / 11.1% figures in this section are the
+> original per-point-agreement numbers, which include UNKNOWN ground truth; the current scorer
+> (`10b_eval_distance_metrics.py`) excludes it (94.98% / 6.65%).
+
 - **Deliverable:** `src/perception/salsanext_predictor.py` — real, working inference (not a stub):
   spherical range-image projection (`src/perception/range_projection.py`, transcribed from the official
   `train/common/laserscan.py::do_range_projection`) → model forward pass → reverse re-projection →
@@ -226,7 +236,6 @@ scaffolding exists, core logic is a documented stub), **❌ Not Started**.
 - **VRAM integration verified real:** `check_concurrent_fit()` from `src/deployment/vram_budget.py` is
   actually called (not dead code) from `src/deployment/optimized_inference.py` before engine loads.
 
-### Phase 9 — Real-Time Dashboard — 🟡 Implemented, Never Run
 ### Phase 9 — Real-Time Dashboard & Telemetry — ✅ Complete & Verified
 - **Deliverables:** `src/13_realtime_dashboard.py` (entry point with live GUI and headless replay modes),
   `src/dashboard/dashboard_state.py` (`FrameState`, `HardwareMetrics`, plus `assert_coordinate_frame_consistency()`
@@ -239,8 +248,23 @@ scaffolding exists, core logic is a documented stub), **❌ Not Started**.
   - `outputs/phase9/session/dashboard_session.jsonl` (verified live telemetry across 10-frame replays at >17 FPS on 131k-point scans).
   - `outputs/phase9/dashboard_semantickitti_overview.png` (side-by-side Elevation, Traversability, ROI/Tracks for SemanticKITTI).
   - `outputs/phase9/dashboard_rellis3d_overview.png` (side-by-side Elevation, Traversability, ROI/Tracks for RELLIS-3D).
-- **Unit test coverage:** Verified via `tests/test_dashboard_state.py`, `tests/test_dashboard_traversability_convention.py`,
-  and `tests/test_data_streamer_sources.py`.
+- **Added since the first dashboard milestone:** pull-based playback controller in
+  `DashboardApplication` (QTimer + per-frame `FrameState` cache: STEP back replays without re-running
+  the tracker, RESTART and environment switch reset the tracker), Open3D window embedded into the Qt
+  window (`win32_embed.py`), 3D box class labels (`track_labels.py`), per-object terrain features
+  (slope, clearance, overhang, pothole/bump; `perception/terrain_features.py`), overhead-clearance and
+  forward-corridor panels, informational ICP ego-displacement, live accuracy vs. ground truth, and a
+  `--profile` per-stage timing harness (`stage_timer.py`).
+- **Committed 2026-09-30:** alert cards and threat toast moved from floating overlays into the left
+  panel; default `--rate-hz` 14 → 30; `--ego-motion-every-n` flag (default 30); the app starts maximized.
+- **Held back (not committed):** a set of "OPT-n" caches/throttles in `data_streamer.py`,
+  `qt_main_window.py` and `open3d_viewer.py`. They cut `process_frame()` from 128 to about 92 ms but fail
+  2 tests and have known correctness issues (see §8.1). They remain only in the local working tree.
+- **Unit test coverage:** `tests/test_dashboard_state.py`, `test_dashboard_traversability_convention.py`,
+  `test_data_streamer_sources.py`, `test_track_labels.py`, `test_tracked_objects_table.py`,
+  `test_qt_dashboard_display_fixes.py`, `test_alert_card_placement.py`, `test_win32_zorder.py`,
+  `test_terrain_features*.py`, `test_centerline_profile.py`, `test_overhead_detection.py`,
+  `test_ego_motion_estimate.py`.
 
 ### Phase 10 — Live ROS 2 Integration — 🟡 Implemented (ROS 2 environment required to run)
 - **Deliverables:** `ros2_ws/src/foveax_ros/foveax_ros/lidar_node.py` (a plain `rclpy.Node` — explicitly
@@ -279,7 +303,7 @@ scaffolding exists, core logic is a documented stub), **❌ Not Started**.
 
 ### Phase 12 — Validation and Distance-Bucketed Benchmarking — ✅ Complete
 - **Deliverable:** `src/10b_eval_distance_metrics.py` — computes distance-bucketed accuracy and a full
-  per-class confusion matrix matching FOVEAX's foveated zones: Near (0–15m), Mid (15–35m), Far (35–100m),
+  per-class confusion matrix matching FOVEAX's foveated zones: Near (0–10m), Mid (10–30m), Far (30–100m),
   with ground-truth UNKNOWN(7) points (e.g. SemanticKITTI's own "unlabeled"/"outlier" raw classes)
   excluded from scoring — matching SemanticKITTI's own official benchmark convention.
   (An earlier duplicate, `src/perception/distance_accuracy_eval.py`, computed the same underlying metric
@@ -288,16 +312,29 @@ scaffolding exists, core logic is a documented stub), **❌ Not Started**.
   actual measured numbers were 6.65%/22.26%. It was deleted rather than fixed in place, since consolidating
   to one tested, always-live-computed source of truth was more valuable than patching a second one.)
 - **Measured results** (SemanticKITTI seq 00/frame 000000, RELLIS-3D seq 00000/frame 000000):
-  - **SemanticKITTI (Urban HDL-64E):** 93.31% overall agreement, all 124,668 points (Near: 95.98% of
-    90,657 pts, Mid: 92.94% of 26,955, Far: 60.43% of 7,056). With SemanticKITTI's own UNKNOWN ground
-    truth excluded (`10b`'s convention): 94.98% overall, 122,480 points (Far rises to 86.58% of 4,925 —
-    30.2% of the Far zone's raw ground truth is UNKNOWN/unlabeled, which drags the unfiltered number down
-    without reflecting a real prediction error).
-  - **RELLIS-3D Unadapted Baseline:** 6.65% agreement (Near: 4.99%, Mid: 18.38%), suffering severe vehicle hallucination.
-  - **RELLIS-3D Sensor-Adapted (+17.02°/-16.44° FOV + intensity rescale):** 22.26% overall agreement (Near: 18.71%, Mid: 47.72%),
+  - **SemanticKITTI (Urban HDL-64E):** 93.31% overall agreement on all 124,668 points; with
+    SemanticKITTI's own UNKNOWN ground truth excluded (`10b`'s convention): 94.98% overall on 122,480
+    points (Near 97.70%, Mid 92.82%, Far 87.28%; re-measured 2026-09-30 with the 10/30 m zones).
+  - **RELLIS-3D Unadapted Baseline:** 6.65% agreement (Near: 3.78%, Mid: 17.36%), suffering severe vehicle hallucination.
+  - **RELLIS-3D Sensor-Adapted (+17.02°/-16.44° FOV + intensity rescale):** 22.26% overall agreement (Near: 15.07%, Mid: 49.57%),
     eliminating projection collapse and recovering trail rough terrain / vegetation geometry.
 - **Unit test coverage:** `tests/test_eval_distance_metrics.py` (7 tests: bucket accuracy, UNKNOWN
   exclusion, mask restriction, empty-bucket handling, confusion-matrix contents — all pass).
+
+### Phase 12 (Stage 6) — SalsaNext Fine-Tuning on RELLIS-3D — ✅ Complete
+- **Deliverables:** `src/14_finetune_salsanext.py` (reuses upstream SalsaNext's network, Lovász-softmax,
+  warmup scheduler, weighted NLL and SGD config; replaces the 20-class head with an 8-class FOVEAX head),
+  `src/training/rellis3d_dataset.py` (deterministic splits and range-image samples with preprocessing
+  identical to `SalsaNextPredictor.predict()`), `src/prepare_rellis3d_for_salsanext_training.py`
+  (alternative export into upstream's `sequences/` layout), `SalsaNextPredictor(taxonomy="foveax")`.
+- **Split:** sequence `00000` held out entirely as test; train 4,532 / val 162 frames from `00001`–`00004`
+  with a 15% contiguous val tail and a 10-frame gap.
+- **Results:** best val accuracy 89.05% (epoch 9); **81.53% on 100 held-out test frames** (Near 78.83%,
+  Mid 89.42%, Far 69.85%); SemanticKITTI forgetting 94.98% → 23.97%. 101 min of training compute, 3.77 GB
+  peak VRAM at batch size 2. Logs: `outputs/phase12/train_log*.txt`, `class_frequencies.json`.
+- **Checkpoints:** `models/salsanext/rellis3d_finetuned/` (`best.pt` = epoch 9); the original checkpoint
+  is unchanged (MD5-verified).
+- **Test coverage:** `tests/test_rellis3d_finetune_dataset.py`.
 
 ### Phase 13 — Documentation, Packaging and Presentation Preparation — ✅ Complete
 - `README.md` and `PROJECT_STATUS.md` fully updated with complete CLI commands, architecture rationale,
@@ -306,7 +343,8 @@ scaffolding exists, core logic is a documented stub), **❌ Not Started**.
 - Detailed technical documentation in `docs/` (`salsanext_setup.md`, `rellis3d_integration.md`,
   `phase8_object_tracking.md`, `phase10_ros2_integration.md`, `phase11_deployment_and_optimization.md`).
 - Version control history organized into clean, phase-scoped commits.
-- Full verification summary and judge-facing report written to `walkthrough.md`.
+- Measured-results source of truth: `docs/validation_results.md`. (A `walkthrough.md` was referenced
+  here previously; no such file exists in the repository.)
 
 ---
 
@@ -374,23 +412,27 @@ Raw LiDAR Point Cloud [x, y, z, intensity]
 ```
 FOVEAX 2.5D TRAIL/
 ├── CLAUDE.md                       Architecture notes for AI-assisted development
-├── README.md                       Phase 1-11 overview and CLI usage
+├── README.md                       Overview, results summary and CLI usage
 ├── PROJECT_STATUS.md                This file
 ├── data/
 │   └── semantic_kitti/dataset/sequences/00/   Real KITTI data: 4,541 velodyne .bin + labels
 ├── models/
-│   ├── salsanext/pretrained/pretrained/   Real checkpoint (weights + arch_cfg.yaml + data_cfg.yaml)
+│   ├── salsanext/pretrained/pretrained/   Official checkpoint (weights + arch_cfg.yaml + data_cfg.yaml)
+│   ├── salsanext/rellis3d_finetuned/      Stage 6 fine-tuned checkpoints (best.pt = epoch 9)
 │   └── openpcdet/                  Empty — no PointPillars checkpoint downloaded
 ├── external/
-│   ├── SalsaNext/                  Cloned, HEAD 7548c124
-│   └── OpenPCDet/                  Cloned, pinned v0.5.2
+│   └── SalsaNext/                  Cloned, HEAD 7548c124
+│   (OpenPCDet v0.5.2 is cloned outside the repo, at C:\FOVEAX 2.5D\external\OpenPCDet;
+│    RELLIS-3D data lives at C:\dev\data\rellis3d)
 ├── docs/
 │   ├── phase8_object_tracking.md
 │   ├── phase10_ros2_integration.md
 │   ├── phase11_deployment_and_optimization.md
 │   ├── openpcdet_pointpillars_setup.md
 │   ├── salsanext_setup.md
-│   └── rellis3d_integration.md     RELLIS-3D loader/mapping + SalsaNext domain-transfer diagnosis
+│   ├── rellis3d_integration.md     RELLIS-3D layout, domain-gap diagnosis and its resolution
+│   ├── validation_results.md       Source of truth for every measured number
+│   └── assets/                     README images, demo GIF/MP4
 ├── src/
 │   ├── 01_view_open3d_sample.py    Phase 1
 │   ├── 02_color_by_height.py       Phase 1
@@ -405,7 +447,10 @@ FOVEAX 2.5D TRAIL/
 │   ├── 11_object_detection_tracking.py   Phase 8 CLI
 │   ├── 12_env_inspector.py         Phase 0
 │   ├── 13_optimize_and_deploy.py   Phase 11 CLI
-│   ├── 13_realtime_dashboard.py    Phase 9 entry point
+│   ├── 10b_eval_distance_metrics.py      Phase 12 Near/Mid/Far scorer (shared compute_metrics)
+│   ├── 13_realtime_dashboard.py    Phase 9 entry point (GUI, --headless, --profile)
+│   ├── 14_finetune_salsanext.py    Stage 6 fine-tuning
+│   ├── prepare_rellis3d_for_salsanext_training.py
 │   ├── perception/
 │   │   ├── object_detector.py      ObjectDetector ABC, MockObjectDetector
 │   │   ├── openpcdet_predictor.py  OpenPCDetPointPillarsDetector
@@ -414,14 +459,24 @@ FOVEAX 2.5D TRAIL/
 │   │   ├── range_projection.py     Spherical range-image projection for SalsaNext
 │   │   ├── rellis3d_loader.py      RELLIS-3D file I/O, sky exclusion, class remap
 │   │   ├── semantic_labels.py      FOVEAX taxonomy + KITTI remap + RELLIS3D_TO_FOVEAX
+│   │   ├── terrain_features.py     Per-object slope/clearance/overhang, hazard kind
+│   │   ├── overhead_detection.py   Overhead-clearance vs. solid-obstacle cells
+│   │   ├── centerline_profile.py   Forward-corridor height profile
+│   │   ├── ego_motion_estimate.py  Informational ICP displacement (no odometry)
 │   │   └── grid_overlay.py         Traversability overlay rendering
+│   ├── training/
+│   │   └── rellis3d_dataset.py     Fine-tuning splits + range-image dataset
 │   ├── tracking/
 │   │   └── multi_object_tracker.py MultiObjectTracker, TrackState (Kalman)
 │   ├── dashboard/
 │   │   ├── dashboard_state.py      FrameState, HardwareMetrics, coord-frame check
-│   │   ├── data_streamer.py        DataStreamerThread (QThread)
-│   │   ├── qt_main_window.py       PyQt5 2D panel
-│   │   └── open3d_viewer.py        Open3D 3D viewer process
+│   │   ├── data_streamer.py        DataStreamerThread.process_frame (per-frame pipeline)
+│   │   ├── qt_main_window.py       PyQt5 main window and panels
+│   │   ├── open3d_viewer.py        Open3D 3D viewer process
+│   │   ├── track_labels.py         3D box labels as Qt widgets
+│   │   ├── win32_embed.py          Reparent the Open3D window into Qt
+│   │   ├── stage_timer.py          --profile timing harness
+│   │   └── export_*.py             Web JSON export, static PNG snapshots
 │   ├── deployment/
 │   │   ├── vram_budget.py          Real-time VRAM polling + concurrent-fit check
 │   │   ├── deployment_config.py    HardwareProfile registry (rtx_5050_laptop)
@@ -436,11 +491,11 @@ FOVEAX 2.5D TRAIL/
 │   ├── foveax_ros/{lidar_node.py, diagnostics.py}
 │   ├── launch/foveax.launch.py
 │   └── package.xml, setup.py
-├── outputs/                        Real generated artifacts, phase1–phase8 + phase11,
+├── outputs/                        Real generated artifacts, phase1–phase9, phase11, phase12,
 │   plus outputs/phase7/rellis3d/<seq>_<frame>_<source>/ (RELLIS-3D runs, kept separate
 │   from SemanticKITTI's outputs/phase7/<source>/ to avoid overwriting)
-│   (no phase9/ or phase10/ — those phases have never been run)
-└── tests/                          283 tests, 0 failures; conftest.py enforces
+│   (no phase10/ — ROS 2 has never been run)
+└── tests/                          505 tests; conftest.py enforces
                                      torch-before-PyQt5 import order for the whole session
 ```
 
@@ -451,11 +506,13 @@ FOVEAX 2.5D TRAIL/
 | `src/perception/object_detector.py` | Defines the detector interface; `MockObjectDetector` is a deterministic geometric-clustering baseline (explicitly warns it is not AI). |
 | `src/perception/openpcdet_predictor.py` | Real PointPillars 3D detection via the OpenPCDet toolbox; includes 3D IoU computation and class-name mapping. |
 | `src/perception/semantic_predictor.py` | Defines the semantic-segmentation interface; ground-truth and mock implementations. |
-| `src/perception/salsanext_predictor.py` | Real, working SalsaNext semantic segmentation (checkpoint loaded, verified 93.3% agreement on SemanticKITTI; not yet usable on RELLIS-3D — sensor/intensity domain mismatch). |
+| `src/perception/salsanext_predictor.py` | Real SalsaNext semantic segmentation; `taxonomy="semantickitti"` (pretrained, 94.98% SemanticKITTI) or `taxonomy="foveax"` (RELLIS-3D fine-tuned, 81.53% held-out). |
 | `src/perception/range_projection.py` | Spherical range-image projection + reverse re-projection, transcribed from the official SalsaNext `laserscan.py`. |
 | `src/perception/rellis3d_loader.py` | Loads RELLIS-3D's real (non-SemanticKITTI-layout) `.bin`/`.label` files, excludes sky points, remaps to FOVEAX classes. |
 | `src/tracking/multi_object_tracker.py` | Kalman-filter multi-object tracking (constant-velocity, IoU/Euclidean association). |
-| `src/dashboard/*` | Live PyQt5 2D map panel + Open3D 3D viewer, driven by a background `QThread` that assembles `FrameState` each tick. |
+| `src/dashboard/*` | Live PyQt5 window + embedded Open3D 3D viewer (separate process). A QTimer-driven playback controller calls `DataStreamerThread.process_frame()` per frame and caches each `FrameState` for step-back. |
+| `src/perception/terrain_features.py` | Real-geometry per-object features (slope, ground clearance, overhang, rock heuristic) and pothole/bump hazard classification. |
+| `src/training/rellis3d_dataset.py` | RELLIS-3D splits and range-image samples for fine-tuning, with preprocessing identical to inference. |
 | `src/deployment/*` | Hardware-aware model export, TensorRT compilation, VRAM budgeting, and profiling for constrained-GPU deployment. |
 | `src/integrations/*` | ROS 2 message ↔ numpy adapters and TF2 coordinate-frame transforms. |
 | `ros2_ws/src/foveax_ros/` | The actual ROS 2 package: a lidar-subscribing node with a decoupled executor/worker threading model. |
@@ -472,9 +529,9 @@ CLI fallback or Python API, not directly verified installed in this environment)
 format).
 
 **AI Models:**
-- **SalsaNext** — real-time semantic segmentation on range-image projections of LiDAR scans. Checkpoint
-  downloaded, loaded, and run for real: 93.3% per-point agreement with ground truth on SemanticKITTI;
-  11.1% on RELLIS-3D (domain-transfer failure, diagnosed, not yet fixed — see `docs/rellis3d_integration.md`).
+- **SalsaNext** — real-time semantic segmentation on range-image projections of LiDAR scans. Pretrained
+  checkpoint: 94.98% on SemanticKITTI. RELLIS-3D: 6.65% pretrained → 22.26% sensor-adapted → 81.53%
+  fine-tuned (held-out sequence). See `docs/validation_results.md` §2.
 - **PointPillars** (via OpenPCDet) — pillar-based 3D object detection. Repo cloned, no checkpoint
   downloaded yet — real inference not yet run (deliberately deprioritized in favor of the SalsaNext/
   RELLIS-3D segmentation work above, per the SIH problem statement's segmentation focus).
@@ -482,13 +539,14 @@ format).
 **Datasets:**
 - **SemanticKITTI** — real data present (`data/semantic_kitti/dataset/sequences/00/`, 4,541 scans),
   actively used by Phases 6 and 7's ground-truth path.
-- **RELLIS-3D, nuScenes, CARLA** — referenced as future/target datasets for off-road and box-detection
-  validation; **no loader, adapter, or data currently exists in-repo for any of these three.**
+- **RELLIS-3D** — real data present (sequences `00000`–`00004`, Ouster OS1-64) at `C:\dev\data\rellis3d`;
+  loader `src/perception/rellis3d_loader.py`; used for dashboard playback, evaluation and fine-tuning.
+- **nuScenes, CARLA** — referenced as possible future datasets; no loader or data exists.
 
 **Robotics:** ROS 2 (Jazzy or Humble, per `docs/phase10_ros2_integration.md`) — package scaffolding
 present, no ROS 2 install verified in this environment.
 
-**Testing:** pytest, 207 tests across 17 test files, 0 failures.
+**Testing:** pytest, 505 tests across 34 test files, all passing on the committed code.
 
 ---
 
@@ -506,6 +564,16 @@ From `outputs/phase11/benchmark/benchmark_summary.txt`: benchmark harness exerci
 50,000 / 100,000 / 150,000 / 250,000 against the `rtx_5050_laptop` target profile (full per-density
 timing breakdown is in that file; only the density sweep itself is summarized here to avoid
 over-precision on numbers not independently re-verified for this document).
+
+End-to-end dashboard pipeline on real RELLIS-3D frames (131,072 points; `docs/validation_results.md` §5):
+
+| Metric | Measured Value |
+|---|---|
+| Headless replay (2026-09-13, commit `783e28f`, before later features) | 13.8 FPS overall, 60–65 ms/frame steady state |
+| `process_frame()` in `--profile` (2026-09-30, committed code, ground-truth predictor) | 128.4 ms mean, 163.0 ms p95 |
+| Same, with the held-back OPT-n speed-ups (same-day A/B) | 92.1 ms mean, 107.1 ms p95 |
+| Largest stage | detection/clustering + terrain features, 84 ms (62 ms with OPT-n) |
+| SalsaNext forward pass (2026-09-20 profile, pretrained) | 42.4 ms, plus 19.5 ms range projection |
 
 ### 7.2 Expected (post-optimization, per `docs/phase11_deployment_and_optimization.md`)
 These are documented engineering targets, **not yet independently measured against a real compiled
@@ -527,45 +595,57 @@ engine** in this environment (no SalsaNext/PointPillars checkpoint has been comp
 
 ## 8. Next Steps
 
-### Week 1 — Phase 11 Implementation + RELLIS-3D fix
-- [x] ~~Clone OpenPCDet and SalsaNext into `external/`; download official pretrained checkpoints into `models/`.~~ Done — both cloned, SalsaNext checkpoint downloaded and loading cleanly.
-- [ ] Fix the RELLIS-3D domain-transfer failure: reproject with the Ouster OS1-64's real FOV (`-16.44°`..`+17.02°`, not the assumed HDL-64E `-25°`..`+3°`) and rescale/renormalize intensity; re-measure per-point agreement against the current 11.1% baseline.
-- [ ] Run the ONNX exporter against the real SalsaNext checkpoint (currently only the intentional-stub path is exercised).
-- [ ] Compile at least one real FP16 TensorRT engine and re-measure latency/VRAM against the Phase 11 targets in §7.2.
-- [ ] Exercise the INT8 calibration path (`calibration.py`) against a representative sample and measure actual accuracy delta (currently unverified in either direction).
-- [ ] Download a PointPillars checkpoint and run real OpenPCDet inference (deprioritized so far in favor of the segmentation work above).
+Rewritten 2026-09-30; the earlier week-by-week checklist (dated 2026-09-11) is superseded — most of it
+is done (dashboard run end to end, RELLIS-3D domain gap resolved by fine-tuning, requirements pinned,
+README updated, 35 commits).
 
-### Week 2 — Phase 11 Completion + Phase 12 Start
-- [ ] Validate `check_concurrent_fit()` against real dual-engine loading (semantic + detection simultaneously) on the actual RTX 5050 target.
-- [ ] Launch `src/13_realtime_dashboard.py` end-to-end for the first time in this environment; confirm `outputs/phase9/session/*.jsonl` telemetry is actually produced and the coordinate-frame warning path is exercised with real data.
-- [ ] Build and launch the `ros2_ws` package for the first time (`colcon build`, `ros2 launch`); confirm `outputs/phase10/` telemetry is produced against either a live sensor or a bagged replay.
-- [ ] Formalize Phase 12: replace the current informal per-point-agreement check (93.3% KITTI / 11.1% RELLIS-3D) with a proper per-class IoU/mIoU metric script.
+### 8.1 Before committing the held-back OPT-n speed-ups (blocking)
+- [ ] Fix the 2 failing tests in `tests/test_dashboard_traversability_convention.py` (new `__init__`-only
+  attributes read by `_generate_maps` and `_render_grid_to_label`).
+- [ ] `data_streamer.py` OPT-12: `grid_maps["elevation"]` is a view of a buffer reused every frame, so a
+  cached `FrameState` shows the newest frame's elevation after STEP back.
+- [ ] `data_streamer.py` OPT-14: the cached `HardwareMetrics` object is mutated and shared across
+  `FrameState`s, so cached frames show the latest fps/latency.
+- [ ] `data_streamer.py` OPT-3/OPT-4: hazard and centerline caches compare `frame_idx - cached_idx`, which
+  goes negative after RESTART or an environment switch; the previous run's (or previous sequence's)
+  hazards and corridor profile are then served until the new index passes the old one.
+- [ ] `qt_main_window.py` OPT-7: the centerline chart's "unchanged" key only covers bin count, marker count,
+  first/last distance and the first bin's point count, so real height changes are skipped.
+- [ ] `qt_main_window.py` OPT-5: per-layer render cache can leave another layer's image on screen; the
+  overhead cache ignores the traversability grid and label size.
+- [ ] `data_streamer.py` OPT-15: voxel-downsampling before `_generate_maps` changes point density (used by
+  the uncertainty layer and hazard confidence) and z_min/z_max per cell — re-verify against the full
+  cloud or drop it.
+- [ ] `open3d_viewer.py`: `_TURBO_LUT` is rebuilt inside `update()` every frame, and the cached
+  `self._turbo_cmap` is unused.
 
-### Week 3 — Phase 12 Completion + Phase 13 Start
-- [ ] Run the formal accuracy metric against SemanticKITTI and RELLIS-3D (once the domain-transfer fix above lands) and PointPillars detection once a checkpoint exists.
-- [ ] Run full end-to-end pipeline latency/FPS benchmark (distinct from Phase 11's per-component profiling).
-- [ ] Update `README.md` to cover Phases 6–11 (currently documents through Phase 11's CLI but predates Phase 9/10 dashboard and ROS integration work).
-- [ ] Commit the substantial uncommitted Phase 6–11 work to git with meaningful, phase-scoped commits (currently only 4 commits exist, covering Phases 0–5).
-
-### Week 4 — Final Polish and Submission
-- [ ] Record a demo run covering the full pipeline: raw point cloud → dashboard → tracked objects → optimized inference.
-- [ ] Package for reproducibility (pin a `requirements.txt`/`pyproject.toml` — none currently exists; document the exact `torch==2.14.0+cu130` requirement and the OneDrive/venv-location gotcha discovered during development).
-- [ ] Final review of all `docs/*.md` for accuracy against the as-built code.
-- [ ] Prepare judge-facing summary materials (this document plus a demo video/slide deck — neither currently exists).
+### 8.2 Next
+- [ ] Add `--taxonomy` to the dashboard (`make_semantic_predictor`) so the live view can run the
+  fine-tuned RELLIS-3D checkpoint.
+- [ ] Show a measured FPS in the dashboard; `state.metrics.fps` is currently the target rate.
+- [ ] Reduce detection/clustering cost (84 ms/frame, largest pipeline stage).
+- [ ] Compile a real FP16 TensorRT engine from a trained checkpoint and measure it against §7.2.
+- [ ] Mitigate SemanticKITTI forgetting (replay/mixing) if one checkpoint must serve both domains.
+- [ ] First real ROS 2 run (`colcon build`, `ros2 launch`) against a bag or sensor.
+- [ ] Download a PointPillars checkpoint and run real OpenPCDet inference (deprioritized).
 
 ---
 
 ## 9. Success Criteria
 
 ### 9.1 Technical Success Metrics
-- [ ] End-to-end pipeline sustains real-time frame rate (target FPS to be fixed once Phase 12 benchmarking exists; Phase 9's `HardwareMetrics` already tracks `target_fps` vs. `achieved_fps` per frame, but no live run has recorded this yet).
-- [ ] TensorRT FP16 engine achieves the documented 2.5×–4× throughput improvement over native PyTorch, measured (not just targeted).
-- [ ] Concurrent semantic + detection engines fit within the 6 GB budget on the RTX 5050 target, verified with `check_concurrent_fit()` against real engine sizes.
-- [x] Semantic segmentation validated against ground truth with a real AI model on at least one dataset — done: 93.3% per-point agreement, SalsaNext vs. SemanticKITTI ground truth. A second dataset (RELLIS-3D) has working infrastructure but a diagnosed, unresolved domain-transfer failure (11.1%); object detection accuracy is still outstanding (no PointPillars checkpoint downloaded).
-- [ ] 283/283 existing unit tests continue to pass through all remaining phases; new phases (12, 13) get their own test coverage where they produce testable logic.
+- [ ] End-to-end pipeline sustains a real-time frame rate (currently 128 ms per
+  `process_frame()`; target 25–30 FPS).
+- [ ] TensorRT FP16 engine achieves the documented 2.5×–4× throughput improvement, measured.
+- [ ] Concurrent semantic + detection engines fit the 6 GB budget, verified with real engine sizes.
+- [x] Semantic segmentation validated against ground truth with a real model on two datasets:
+  94.98% SemanticKITTI (pretrained), 81.53% RELLIS-3D held-out (fine-tuned).
+- [x] Full test suite green on the committed code (505 tests, 2026-09-30). The held-back OPT-n changes must keep it green (see §8.1).
 
 ### 9.2 SIH Submission Requirements
-- [ ] GitHub repository with clean, phase-scoped commit history (currently 4 commits cover only Phases 0–5; a catch-up commit pass is required — this now includes the entire RELLIS-3D/SalsaNext work from this session).
-- [ ] Working end-to-end demo (dashboard + ROS 2 integration both currently implemented but never run — this is the single largest gap between "code exists" and "demo-ready").
-- [ ] Complete documentation: architecture (`CLAUDE.md` ✅), phase-by-phase usage (`README.md`, needs a Phase 9–11 update), and this project-status document (✅, this file).
-- [ ] Reproducible environment setup (`requirements.txt`/`pyproject.toml` — currently missing; the exact PyTorch CUDA build requirement is non-obvious and must be documented, since the default `pip install torch` selects a build with no kernels for this hardware).
+- [x] GitHub repository with phase-scoped commit history; downloadable Windows app on the Releases page
+  (`docs/packaging.md`).
+- [x] Working end-to-end dashboard demo on real data (demo GIF/MP4 in `docs/assets/`). ROS 2 not yet run.
+- [x] Documentation: `CLAUDE.md` (architecture), `README.md` (usage), `docs/validation_results.md`
+  (measured results), this document (status).
+- [x] Reproducible environment setup: pinned `requirements.txt`/`pyproject.toml` with the cu130 note.

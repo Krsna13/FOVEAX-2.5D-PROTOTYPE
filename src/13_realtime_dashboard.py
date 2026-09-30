@@ -54,8 +54,12 @@ def parse_args():
         help="Number of frames to process"
     )
     parser.add_argument(
-        "--rate-hz", type=float, default=14.0,
-        help="Target streaming rate in Hz"
+        "--rate-hz", type=float, default=30.0,
+        help="Target streaming rate in Hz (default increased to 30 for smoother playback)"
+    )
+    parser.add_argument(
+        "--ego-motion-every-n", type=int, default=30,
+        help="Run ego-motion estimation every N frames (higher reduces CPU load)"
     )
     parser.add_argument(
         "--headless", action="store_true",
@@ -105,6 +109,15 @@ def parse_args():
     parser.add_argument("--fov-up", type=float, default=None)
     parser.add_argument("--fov-down", type=float, default=None)
     parser.add_argument("--rescale-intensity", action="store_true", default=False)
+    parser.add_argument(
+        "--profile", action="store_true",
+        help="Run the per-stage timing harness (StageTimer) instead of the live GUI: "
+             "--profile-warmup unrecorded frames, then --profile-frames recorded frames of "
+             "the same fixed sequence, printing per-stage mean/p50/p95 and %% of frame time, "
+             "plus a 1 Hz nvidia-smi log. Off by default; changes no pipeline behavior."
+    )
+    parser.add_argument("--profile-frames", type=int, default=500)
+    parser.add_argument("--profile-warmup", type=int, default=30)
     return parser.parse_args()
 
 from multiprocessing import Process, Queue
@@ -197,6 +210,12 @@ class DashboardApplication:
             export_module = importlib.import_module("src.dashboard.export_web_dashboard_data")
             semantic_predictor = export_module.make_semantic_predictor(args.predictor, args)
 
+        # The packaged app ships a small RELLIS-3D sample next to the exe;
+        # prefer it over any dataset path baked into the source install.
+        bundled_root = None
+        if getattr(sys, "frozen", False) and args.source == "rellis3d" and Path("data/rellis3d").exists():
+            bundled_root = Path("data/rellis3d")
+
         self.streamer = DataStreamerThread(
             source=args.source,
             detector=detector,
@@ -205,8 +224,14 @@ class DashboardApplication:
             rate_hz=args.rate_hz,
             semantic_predictor=semantic_predictor,
             predictor_mode=args.predictor,
+            data_root=bundled_root,
         )
         self.streamer._setup_sources()
+        # A recorded sequence can hold fewer frames than --frames (e.g. the
+        # small sample bundled with the packaged app). Playing past the last
+        # file would wrap around and jump back to the start mid-run, so clamp.
+        if self.streamer._file_list:
+            self.streamer.num_frames = min(args.frames, len(self.streamer._file_list))
 
         # Cache of already-computed real FrameStates, keyed by frame index.
         # Stepping backward replays an already-computed real frame from
@@ -238,7 +263,7 @@ class DashboardApplication:
         # next to a 10 Hz (100 ms) frame budget, and it is purely
         # informational (never used to reposition any view), so it is
         # computed only every few real frames rather than every one.
-        self._ego_motion_every_n_frames = 5
+        self._ego_motion_every_n_frames = args.ego_motion_every_n
         self._last_ego_motion_m: float | None = None
 
         self._screenshot_after = getattr(args, "screenshot_after", None)
@@ -489,27 +514,22 @@ class DashboardApplication:
             pass
         if labels is not None:
             self.qt_window.embed_widget.set_track_labels(labels)
-            # The per-track labels are real native child windows (needed to
-            # draw over the reparented Open3D native window at all -- see
-            # Open3DEmbedWidget). alert_container/threat_toast are now also
-            # native (WA_NativeWindow, see qt_main_window.py) so a real
-            # Win32 z-order change actually applies to them -- plain
-            # Qt raise_() was tried first and was not reliable here, since
-            # mixing alien and native sibling widgets on Windows does not
-            # guarantee an alien-vs-native (or native-vs-native, depending
-            # on Qt version) ordering from raise_() alone. This timer fires
-            # far more often (33ms) than the alert cards refresh, so doing
-            # this every time labels are (re)placed is what keeps the
-            # alerts on top continuously instead of only right after the
-            # next playback frame.
-            from src.dashboard.win32_embed import bring_to_absolute_top
-
-            bring_to_absolute_top(int(self.qt_window.alert_container.winId()))
-            if self.qt_window.threat_toast.isVisible():
-                bring_to_absolute_top(int(self.qt_window.threat_toast.winId()))
+            # alert_container/threat_toast used to be fixed-position
+            # overlays floating on top of the embedded 3D view, which meant
+            # fighting its real native child windows (and these per-track
+            # label widgets, also native) for z-order -- hence the repeated
+            # bring_to_absolute_top() calls that used to live here. Both are
+            # now laid out directly in the left panel instead (see
+            # qt_main_window.py::_build_left_panel), so they no longer
+            # overlap any native child window and need no special-casing.
 
     def run(self, capture_sequence: str | None = None, capture_every: int = 10):
-        self.qt_window.show()
+        # Launch maximized: the fixed 1400x900 default (still used as the
+        # restored-window size if the user un-maximizes) clips the right
+        # panel's STATUS/TERRAIN/SYSTEM tabs and the FORWARD CORRIDOR
+        # CROSS-SECTION panel below the fold, forcing a manual resize/zoom
+        # just to see the full real layout on every launch.
+        self.qt_window.showMaximized()
         if self._attempt_embed:
             self._try_reparent()
 
@@ -579,9 +599,191 @@ def run_headless(args):
     print("=" * 60)
 
 
+def run_profile(args):
+    """Per-stage timing of the real pipeline (see src/dashboard/stage_timer.py).
+
+    Drives the same objects the live GUI drives, per frame and in the same
+    order as DashboardApplication._show_frame: DataStreamerThread.process_frame
+    (with its internal stage regions), the every-Nth-frame ego-motion ICP,
+    FoveaX3DViewer.update + poll_events, and FoveaXDashboardWindow.update_ui
+    followed by a Qt event-loop drain (which is where the matplotlib canvases
+    and widgets actually paint). The Open3D viewer and Qt window are real but
+    off-screen (visible=False / WA_DontShowOnScreen) and run IN-PROCESS here so
+    every frame maps 1:1 to a timing sample; the live dashboard instead runs
+    the Open3D viewer in a separate process fed by a queue, so its rendering is
+    decoupled from per-frame timing (see the printed caveats).
+    """
+    import subprocess
+
+    from PyQt5.QtCore import Qt
+
+    from src.dashboard.stage_timer import StageTimer
+
+    warmup, measured = args.profile_warmup, args.profile_frames
+    total_frames = warmup + measured
+    seq = args.sequence or ("00001" if args.source == "rellis3d" else "00")
+
+    print("=" * 78)
+    print("FOVEAX per-stage profile")
+    print("=" * 78)
+    print(f"source={args.source} sequence={seq} predictor={args.predictor} "
+          f"warmup_frames={warmup} measured_frames={measured} rate_hz_arg={args.rate_hz}")
+
+    detector = MockObjectDetector()
+    semantic_predictor = None
+    if args.predictor != "ground_truth":
+        export_module = importlib.import_module("src.dashboard.export_web_dashboard_data")
+        semantic_predictor = export_module.make_semantic_predictor(args.predictor, args)
+
+    streamer = DataStreamerThread(
+        source=args.source, detector=detector, num_frames=total_frames, sequence=seq,
+        rate_hz=args.rate_hz, semantic_predictor=semantic_predictor,
+        predictor_mode=args.predictor,
+    )
+    streamer._setup_sources()
+
+    cuda_ok = False
+    try:
+        import torch
+        cuda_ok = torch.cuda.is_available()
+        if cuda_ok:
+            print(f"cuda device: {torch.cuda.get_device_name(0)}  torch {torch.__version__}")
+    except Exception:
+        pass
+    timer = StageTimer(
+        cuda_stages=frozenset({"h2d_transfer", "salsanext_forward"}) if cuda_ok else frozenset()
+    )
+    streamer.stage_timer = timer
+    if semantic_predictor is not None and hasattr(semantic_predictor, "stage_timer"):
+        semantic_predictor.stage_timer = timer
+    else:
+        for n in ("range_image_projection", "h2d_transfer", "salsanext_forward", "postprocessing"):
+            timer.mark_not_applicable(n, f"predictor={args.predictor}: no SalsaNext inference is run")
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    window = FoveaXDashboardWindow(embed_3d=False)
+    window.setAttribute(Qt.WA_DontShowOnScreen, True)
+    window.resize(1536, 912)
+    window.show()
+    app.processEvents()
+    viewer = FoveaX3DViewer(visible=False)
+
+    ego_every_n = 5
+    prev_points = None
+    seen_metrics_fps = set()
+    latency_ms_samples = []
+    proc_frame_ms = []
+    smi = None
+    gpu_fh = None
+    gpu_csv = Path("outputs/phase12/gpu_util_profile.csv")
+    gpu_csv.parent.mkdir(parents=True, exist_ok=True)
+    t_measured_start = None
+
+    for idx in range(total_frames):
+        if idx == 0:
+            timer.set_recording(False)
+        if idx == warmup:
+            timer.set_recording(True)
+            gpu_fh = open(gpu_csv, "w")
+            smi = subprocess.Popen(
+                ["nvidia-smi",
+                 "--query-gpu=timestamp,utilization.gpu,utilization.memory,memory.used,clocks.sm,power.draw",
+                 "--format=csv,noheader,nounits", "-l", "1"],
+                stdout=gpu_fh, stderr=subprocess.DEVNULL,
+            )
+            t_measured_start = time.perf_counter()
+
+        with timer.time("frame_total"):
+            ts = idx / args.rate_hz
+            t_pf = time.perf_counter()
+            state = streamer.process_frame(idx, ts, fps=args.rate_hz)
+            if idx >= warmup:
+                proc_frame_ms.append((time.perf_counter() - t_pf) * 1000.0)
+                seen_metrics_fps.add(round(state.metrics.fps, 6))
+                latency_ms_samples.append(state.metrics.latency_ms)
+
+            if idx > 0 and idx % ego_every_n == 0 and prev_points is not None:
+                with timer.time("ego_motion_icp"):
+                    from src.perception.ego_motion_estimate import estimate_relative_displacement_m
+                    try:
+                        estimate_relative_displacement_m(prev_points[:, :3], state.points[:, :3])
+                    except Exception:
+                        pass
+            prev_points = state.points
+
+            with timer.time("open3d_update"):
+                viewer.update(state)
+                viewer.poll_events()
+            with timer.time("open3d_label_projection"):
+                viewer.compute_track_labels()
+            with timer.time("qt_ui_update"):
+                window.update_ui(state)
+            with timer.time("qt_event_loop_paint"):
+                app.processEvents()
+
+    wall_s = time.perf_counter() - t_measured_start
+    if smi is not None:
+        smi.terminate()
+        smi.wait(timeout=5)
+        gpu_fh.close()
+
+    stage_order = [
+        "load",
+        "range_image_projection", "h2d_transfer", "salsanext_forward", "postprocessing",
+        "live_accuracy_metrics",
+        "clustering_heuristics",
+        "kalman_tracking",
+        "grid_maps_hazards",
+        "metrics_state_logging",
+        "ego_motion_icp",
+        "open3d_update", "open3d_label_projection",
+        "qt_ui_update", "qt_event_loop_paint",
+    ]
+    print()
+    print(timer.report(stage_order, total_name="frame_total"))
+
+    tot = timer.samples("frame_total")
+    attributed = sum(sum(timer.samples(n)) for n in stage_order) / len(tot)
+    tot_mean = sum(tot) / len(tot)
+    print("-" * 78)
+    print(f"unattributed (frame_total mean - sum of stage means, exact difference): "
+          f"{tot_mean - attributed:.3f} ms = {100.0 * (tot_mean - attributed) / tot_mean:.1f}% of frame")
+    print(f"measured frames: {len(tot)}   wall time for measured frames: {wall_s:.2f} s   "
+          f"=> {len(tot) / wall_s:.2f} frames/s (includes profiling wrappers)")
+    pf = sorted(proc_frame_ms)
+    print(f"process_frame() alone (wall): mean {sum(pf)/len(pf):.3f} ms  "
+          f"p50 {pf[len(pf)//2]:.3f}  p95 {pf[int(len(pf)*0.95)]:.3f}")
+    print()
+    print("ON-SCREEN COUNTER CHECK (values that state.metrics carried during the measured frames):")
+    print(f"  distinct state.metrics.fps values seen: {sorted(seen_metrics_fps)}  "
+          f"(args.rate_hz passed to process_frame = {args.rate_hz})")
+    lm = sorted(latency_ms_samples)
+    print(f"  state.metrics.latency_ms: mean {sum(lm)/len(lm):.3f}  p50 {lm[len(lm)//2]:.3f}  "
+          f"p95 {lm[int(len(lm)*0.95)]:.3f}  (measured inside process_frame, t_start to just before metrics build)")
+
+    print()
+    print(f"GPU LOG (nvidia-smi, 1 Hz, measured phase only) -> {gpu_csv}")
+    print("columns: timestamp, util.gpu %, util.mem %, mem.used MiB, clocks.sm MHz, power.draw W")
+    rows = [l.strip() for l in open(gpu_csv) if l.strip()]
+    for r in rows:
+        print("  " + r)
+    utils = []
+    for r in rows:
+        try:
+            utils.append(float(r.split(",")[1]))
+        except Exception:
+            pass
+    if utils:
+        print(f"GPU util.gpu over {len(utils)} samples: mean {sum(utils)/len(utils):.1f}%  "
+              f"min {min(utils):.0f}%  max {max(utils):.0f}%")
+    print("=" * 78)
+
+
 def main():
     args = parse_args()
-    if args.headless:
+    if args.profile:
+        run_profile(args)
+    elif args.headless:
         run_headless(args)
     else:
         app = DashboardApplication(args)
@@ -589,4 +791,13 @@ def main():
 
 
 if __name__ == "__main__":
+    # Needed for the packaged (PyInstaller) build: the Open3D view runs in a
+    # multiprocessing child, and a frozen exe re-launches itself to start it.
+    from multiprocessing import freeze_support
+    freeze_support()
+    if getattr(sys, "frozen", False):
+        # Sample data and outputs/ live next to the exe, not in the temp
+        # folder the bundle unpacks to.
+        import os
+        os.chdir(Path(sys.executable).resolve().parent)
     main()

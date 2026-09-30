@@ -23,11 +23,12 @@ According to the SalsaNext official documentation, ensure your Python environmen
 - `tqdm`
 - `numba` (often used in point cloud processing)
 
-Install them in your active virtual environment. For example (for CUDA 12.1):
+Install them in your active virtual environment. This project's GPU (RTX 5050 Laptop, Blackwell `sm_120`) needs the **cu130** PyTorch build; older CUDA builds (cu121, cu126) install and report `torch.cuda.is_available() == True` but fail on the first real GPU op with `no kernel image is available`:
 ```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip install torch==2.14.0 torchvision --index-url https://download.pytorch.org/whl/cu130
 pip install pyyaml tqdm numba
 ```
+On a different GPU, use the official PyTorch CUDA build that matches its compute capability, and confirm with a real op (e.g. a matmul on `cuda`), not just `is_available()`.
 
 ## 3. Pretrained Weights
 
@@ -49,7 +50,9 @@ The zip's internal top-level folder is itself named `pretrained/`, so extracting
 
 SalsaNext's own pinned environment (`salsanext_cuda10.yml`) targets **Python 3.7.4, PyTorch 1.1.0, CUDA 10.0** -- roughly five years behind this project's actual stack (Python 3.11.16, PyTorch 2.14.0+cu130). This was flagged as a risk before attempting to load the checkpoint.
 
-**Outcome, observed**: the version gap is **not yet a determined risk either way** -- a real load attempt against the actual downloaded checkpoint (2026-09-11) failed before ever reaching `torch.load()` on the weights file, so nothing has actually tested whether the old checkpoint's `state_dict` is compatible with PyTorch 2.14.0+cu130. The failure is a separate, unrelated bug: the official repo's own `train/tasks/semantic/modules/SalsaNext.py` does `import __init__ as booger`, which only resolves when `train/tasks/semantic/modules/` itself is on `sys.path` (the official `eval.sh` achieves this by `cd`-ing into `train/tasks/semantic/` before running, which Python's script-directory convention then adds to `sys.path[0]`). `salsanext_predictor.py`'s `_load_model()` currently only adds the repo root to `sys.path`, not that subdirectory, so the import fails with `ModuleNotFoundError: No module named '__init__'` -- confirmed via direct traceback, not guessed. This needs a fix to `_load_model()`'s `sys.path` setup before the version-gap question can actually be tested.
+**Resolved (2026-09-11):** after the `sys.path` fix below plus 3b and 3c, the checkpoint loads under PyTorch 2.14.0+cu130 with 312/312 weights matched, and real inference reaches 94.98% on SemanticKITTI (`docs/validation_results.md` §2.1). The original investigation notes follow.
+
+**Outcome, observed at the time**: the version gap is **not yet a determined risk either way** -- a real load attempt against the actual downloaded checkpoint (2026-09-11) failed before ever reaching `torch.load()` on the weights file, so nothing has actually tested whether the old checkpoint's `state_dict` is compatible with PyTorch 2.14.0+cu130. The failure is a separate, unrelated bug: the official repo's own `train/tasks/semantic/modules/SalsaNext.py` does `import __init__ as booger`, which only resolves when `train/tasks/semantic/modules/` itself is on `sys.path` (the official `eval.sh` achieves this by `cd`-ing into `train/tasks/semantic/` before running, which Python's script-directory convention then adds to `sys.path[0]`). `salsanext_predictor.py`'s `_load_model()` currently only adds the repo root to `sys.path`, not that subdirectory, so the import fails with `ModuleNotFoundError: No module named '__init__'` -- confirmed via direct traceback, not guessed. This needs a fix to `_load_model()`'s `sys.path` setup before the version-gap question can actually be tested.
 
 (Separately, `SalsaNext.py` also does `import imp`, a stdlib module deprecated and removed in Python 3.12+ -- harmless on this project's Python 3.11.16, but another data point that this repo predates the current toolchain by a wide margin.)
 
@@ -95,3 +98,18 @@ python src/10_ai_semantic_2point5d_map.py \
 ```
 
 **Note on `--config`**: this previously (incorrectly) pointed at `external/SalsaNext/train/tasks/semantic/config/arch_cfg.yaml` -- that file does not exist anywhere in the official repository. `arch_cfg.yaml` ships inside the downloaded pretrained-model folder itself (see section 3), alongside `data_cfg.yaml`, which `salsanext_predictor.py` now also loads automatically as a sibling of `--config` (needed to derive `num_classes`, which is absent from `arch_cfg.yaml` entirely -- see section 3a).
+
+## 6. Fine-tuned RELLIS-3D checkpoint
+
+`src/14_finetune_salsanext.py` fine-tunes the pretrained checkpoint on RELLIS-3D with an 8-class FOVEAX head and writes to `models/salsanext/rellis3d_finetuned/` (`epoch_000.pt`...`epoch_009.pt`, `last.pt`, `best.pt`, `history.json`, plus copies of `arch_cfg.yaml`/`data_cfg.yaml`). Load it with `taxonomy="foveax"` (`--taxonomy foveax` on `src/10b_eval_distance_metrics.py`):
+
+```bash
+python src/10b_eval_distance_metrics.py --dataset-type rellis3d --sequence 00000 --frame 000000 \
+    --taxonomy foveax \
+    --salsanext-repo external/SalsaNext \
+    --checkpoint models/salsanext/rellis3d_finetuned/best.pt \
+    --config models/salsanext/rellis3d_finetuned/arch_cfg.yaml \
+    --device auto
+```
+
+With `taxonomy="foveax"` the network's argmax is already a FOVEAX class ID, so `salsanext_predictor.py` skips `learning_map_inv` and `SEMANTICKITTI_TO_FOVEAX`, and points with no range-image pixel fall back to FOVEAX UNKNOWN (7), not class 0 (which is DRIVABLE_GROUND in this taxonomy). Results and the forgetting trade-off are in `docs/validation_results.md` §2.3 and `docs/rellis3d_integration.md`.

@@ -25,7 +25,7 @@ LABEL_Z_OFFSET_M = 0.3
 # src/10b_eval_distance_metrics.py. Kept in one place so a per-zone object
 # count can never use different boundaries than the zones it's labelled
 # against.
-DISTANCE_ZONE_BOUNDS_M = (0.0, 15.0, 35.0, 100.0)
+DISTANCE_ZONE_BOUNDS_M = (0.0, 10.0, 30.0, 100.0)
 DISTANCE_ZONE_NAMES = ("Near", "Middle", "Far")
 
 

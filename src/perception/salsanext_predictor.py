@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sys
 import warnings
+from contextlib import nullcontext
 from pathlib import Path
 
 import numpy as np
@@ -116,6 +117,9 @@ class SalsaNextPredictor(SemanticPredictor):
             self.device = torch.device(device)
 
         self.model = None
+        # Optional src/dashboard/stage_timer.py::StageTimer, set by --profile.
+        # None (the default) makes every timed region below a no-op.
+        self.stage_timer = None
 
     def _verify_dependencies(self) -> None:
         """Verify that all required files and dependencies exist."""
@@ -289,106 +293,117 @@ class SalsaNextPredictor(SemanticPredictor):
             rescale_intensity if rescale_intensity is not None else self.rescale_intensity
         )
 
-        points_to_project = points.copy()
-        if eff_rescale:
-            # Shared with the fine-tuning data pipeline so train-time and
-            # inference-time preprocessing cannot drift apart.
-            rescale_intensity_to_unit_range(points_to_project)
+        def _t(name):
+            return self.stage_timer.time(name) if self.stage_timer is not None else nullcontext()
 
-        # --- 1. Spherical range-image projection (upstream-faithful) ---
-        projection = project_points_to_range_image(
-            points_to_project, self._arch_cfg, fov_up=eff_fov_up, fov_down=eff_fov_down
-        )
+        with _t("range_image_projection"):
+            points_to_project = points.copy()
+            if eff_rescale:
+                # Shared with the fine-tuning data pipeline so train-time and
+                # inference-time preprocessing cannot drift apart.
+                rescale_intensity_to_unit_range(points_to_project)
+
+            # --- 1. Spherical range-image projection (upstream-faithful) ---
+            projection = project_points_to_range_image(
+                points_to_project, self._arch_cfg, fov_up=eff_fov_up, fov_down=eff_fov_down
+            )
 
         # --- 2. Inference: (5,H,W) -> (1,5,H,W) -> logits (1,C,H,W) ---
         with torch.no_grad():
-            proj_in = torch.from_numpy(projection.image).unsqueeze(0).to(self.device)
-            logits = self.model(proj_in)
-            probs = torch.softmax(logits, dim=1)
+            with _t("h2d_transfer"):
+                proj_in = torch.from_numpy(projection.image).unsqueeze(0).to(self.device)
+            with _t("salsanext_forward"):
+                logits = self.model(proj_in)
+                probs = torch.softmax(logits, dim=1)
 
-            pixel_train_ids = probs.argmax(dim=1)[0]
-            pixel_confidence = probs.max(dim=1).values[0]
+                pixel_train_ids = probs.argmax(dim=1)[0]
+                pixel_confidence = probs.max(dim=1).values[0]
 
-            # Normalized entropy in [0,1] as the uncertainty measure, so it
-            # stays comparable with the other predictors' uncertainty field.
-            eps = 1e-10
-            entropy = -torch.sum(probs * torch.log(probs + eps), dim=1)[0]
-            pixel_uncertainty = entropy / float(np.log(probs.shape[1]))
+                # Normalized entropy in [0,1] as the uncertainty measure, so it
+                # stays comparable with the other predictors' uncertainty field.
+                eps = 1e-10
+                entropy = -torch.sum(probs * torch.log(probs + eps), dim=1)[0]
+                pixel_uncertainty = entropy / float(np.log(probs.shape[1]))
 
+        # Post-processing (timed as one region): device->host copies, reverse
+        # projection to point order, taxonomy remap, confidence summary and
+        # SemanticPrediction construction/validation. The three .cpu() copies
+        # sit outside no_grad -- the tensors were already produced under it.
+        with _t("postprocessing"):
             pixel_train_ids = pixel_train_ids.cpu().numpy()
             pixel_confidence = pixel_confidence.cpu().numpy()
             pixel_uncertainty = pixel_uncertainty.cpu().numpy()
 
-        # --- 3. Reverse projection: pixels -> original point order ---
-        # UNKNOWN_TRAIN_ID is the model's own "unlabeled" training class (0),
-        # which learning_map_inv maps back to SemanticKITTI 0 -> FOVEAX
-        # UNKNOWN. Points with no pixel therefore end up UNKNOWN without
-        # fabricating a class for them.
-        # In the 'foveax' taxonomy the model's own class 0 is DRIVABLE_GROUND,
-        # not "unlabeled", so falling back to 0 for points that never reached a
-        # pixel would fabricate a *drivable* label for unobserved space. Those
-        # points must fall back to FOVEAX UNKNOWN (7) instead.
-        invalid_train_id = (
-            _FOVEAX_UNKNOWN if self.taxonomy == "foveax" else _UNKNOWN_TRAIN_ID
-        )
-        point_train_ids = reproject_labels_to_points(
-            pixel_train_ids, projection, invalid_label=invalid_train_id
-        )
-        point_confidence = reproject_labels_to_points(
-            pixel_confidence.astype(np.float32), projection, invalid_label=0.0
-        ).astype(np.float32)
-        point_uncertainty = reproject_labels_to_points(
-            pixel_uncertainty.astype(np.float32), projection, invalid_label=1.0
-        ).astype(np.float32)
+            # --- 3. Reverse projection: pixels -> original point order ---
+            # UNKNOWN_TRAIN_ID is the model's own "unlabeled" training class (0),
+            # which learning_map_inv maps back to SemanticKITTI 0 -> FOVEAX
+            # UNKNOWN. Points with no pixel therefore end up UNKNOWN without
+            # fabricating a class for them.
+            # In the 'foveax' taxonomy the model's own class 0 is DRIVABLE_GROUND,
+            # not "unlabeled", so falling back to 0 for points that never reached a
+            # pixel would fabricate a *drivable* label for unobserved space. Those
+            # points must fall back to FOVEAX UNKNOWN (7) instead.
+            invalid_train_id = (
+                _FOVEAX_UNKNOWN if self.taxonomy == "foveax" else _UNKNOWN_TRAIN_ID
+            )
+            point_train_ids = reproject_labels_to_points(
+                pixel_train_ids, projection, invalid_label=invalid_train_id
+            )
+            point_confidence = reproject_labels_to_points(
+                pixel_confidence.astype(np.float32), projection, invalid_label=0.0
+            ).astype(np.float32)
+            point_uncertainty = reproject_labels_to_points(
+                pixel_uncertainty.astype(np.float32), projection, invalid_label=1.0
+            ).astype(np.float32)
 
-        # --- 4. Taxonomy: model train IDs -> SemanticKITTI IDs -> FOVEAX ---
-        if self.taxonomy == "foveax":
-            # The head was trained on FOVEAX classes, so its argmax already is
-            # a FOVEAX class ID. Applying learning_map_inv or
-            # SEMANTICKITTI_TO_FOVEAX here would corrupt it.
-            class_ids = point_train_ids.astype(np.uint8)
-        else:
-            # learning_map_inv undoes the training-time class collapse (e.g.
-            # train class 1 -> SemanticKITTI 10 "car"), then the existing,
-            # already-tested SEMANTICKITTI_TO_FOVEAX table does the rest. No new
-            # mapping table is introduced here.
-            max_train_id = max(self._learning_map_inv)
-            inv_lut = np.zeros(max_train_id + 1, dtype=np.int32)
-            for train_id, kitti_id in self._learning_map_inv.items():
-                inv_lut[train_id] = kitti_id
-            point_kitti_ids = inv_lut[point_train_ids]
+            # --- 4. Taxonomy: model train IDs -> SemanticKITTI IDs -> FOVEAX ---
+            if self.taxonomy == "foveax":
+                # The head was trained on FOVEAX classes, so its argmax already is
+                # a FOVEAX class ID. Applying learning_map_inv or
+                # SEMANTICKITTI_TO_FOVEAX here would corrupt it.
+                class_ids = point_train_ids.astype(np.uint8)
+            else:
+                # learning_map_inv undoes the training-time class collapse (e.g.
+                # train class 1 -> SemanticKITTI 10 "car"), then the existing,
+                # already-tested SEMANTICKITTI_TO_FOVEAX table does the rest. No new
+                # mapping table is introduced here.
+                max_train_id = max(self._learning_map_inv)
+                inv_lut = np.zeros(max_train_id + 1, dtype=np.int32)
+                for train_id, kitti_id in self._learning_map_inv.items():
+                    inv_lut[train_id] = kitti_id
+                point_kitti_ids = inv_lut[point_train_ids]
 
-            max_kitti_id = max(SEMANTICKITTI_TO_FOVEAX)
-            foveax_lut = np.full(max_kitti_id + 1, _FOVEAX_UNKNOWN, dtype=np.uint8)
-            for kitti_id, foveax_id in SEMANTICKITTI_TO_FOVEAX.items():
-                foveax_lut[kitti_id] = foveax_id
-            class_ids = foveax_lut[point_kitti_ids]
+                max_kitti_id = max(SEMANTICKITTI_TO_FOVEAX)
+                foveax_lut = np.full(max_kitti_id + 1, _FOVEAX_UNKNOWN, dtype=np.uint8)
+                for kitti_id, foveax_id in SEMANTICKITTI_TO_FOVEAX.items():
+                    foveax_lut[kitti_id] = foveax_id
+                class_ids = foveax_lut[point_kitti_ids]
 
-        # Points that resolved to UNKNOWN carry no usable confidence, matching
-        # GroundTruthSemanticPredictor's convention for its own UNKNOWN points.
-        unknown = class_ids == _FOVEAX_UNKNOWN
-        point_confidence[unknown] = 0.0
-        point_uncertainty[unknown] = 1.0
+            # Points that resolved to UNKNOWN carry no usable confidence, matching
+            # GroundTruthSemanticPredictor's convention for its own UNKNOWN points.
+            unknown = class_ids == _FOVEAX_UNKNOWN
+            point_confidence[unknown] = 0.0
+            point_uncertainty[unknown] = 1.0
 
-        # Calculate mean confidence per predicted class
-        class_confidence = {}
-        for cid, cname in FOVEAX_CLASSES.items():
-            cmask = class_ids == cid
-            if cmask.any():
-                class_confidence[cname] = round(
-                    float(point_confidence[cmask].mean()), 3
-                )
+            # Calculate mean confidence per predicted class
+            class_confidence = {}
+            for cid, cname in FOVEAX_CLASSES.items():
+                cmask = class_ids == cid
+                if cmask.any():
+                    class_confidence[cname] = round(
+                        float(point_confidence[cmask].mean()), 3
+                    )
 
-        prediction = SemanticPrediction(
-            class_ids=class_ids,
-            confidence=np.clip(point_confidence, 0.0, 1.0).astype(np.float32),
-            uncertainty=np.clip(point_uncertainty, 0.0, 1.0).astype(np.float32),
-            source=(
-                "salsanext_rellis3d_finetuned"
-                if self.taxonomy == "foveax"
-                else "salsanext_pretrained"
-            ),
-            class_confidence=class_confidence,
-        )
-        validate_prediction(prediction, num_points)
+            prediction = SemanticPrediction(
+                class_ids=class_ids,
+                confidence=np.clip(point_confidence, 0.0, 1.0).astype(np.float32),
+                uncertainty=np.clip(point_uncertainty, 0.0, 1.0).astype(np.float32),
+                source=(
+                    "salsanext_rellis3d_finetuned"
+                    if self.taxonomy == "foveax"
+                    else "salsanext_pretrained"
+                ),
+                class_confidence=class_confidence,
+            )
+            validate_prediction(prediction, num_points)
         return prediction

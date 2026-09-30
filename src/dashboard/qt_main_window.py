@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QFont
 from src.dashboard.dashboard_state import FrameState
-from src.dashboard.win32_embed import bring_to_absolute_top, resize_child
+from src.dashboard.win32_embed import resize_child
 from src.dashboard.track_labels import (
     track_distance_m,
     tracked_object_row_text,
@@ -21,9 +21,9 @@ from src.dashboard.track_labels import (
 # Real resolution-zone spec (src/07_adaptive_2point5d_map.py SPEC_ZONES_100M),
 # quoted directly for the System Details drawer -- not re-derived or guessed.
 RESOLUTION_ZONES = [
-    ("Near", "0-15 m", "5 cm"),
-    ("Middle", "15-35 m", "20 cm"),
-    ("Far", "35-100 m", "50 cm"),
+    ("Near", "0-10 m", "5 cm"),
+    ("Middle", "10-30 m", "20 cm"),
+    ("Far", "30-100 m", "50 cm"),
 ]
 
 # Canonical traversability convention (src/06_terrain_traversability.py).
@@ -413,7 +413,11 @@ class AlertCard(QFrame):
 
         layout.addWidget(self.lbl_title)
         layout.addWidget(self.lbl_body)
-        self.setFixedWidth(320)
+        # No longer setFixedWidth(320): that was sized for the old
+        # fixed-position floating overlay. Now laid out inside the left
+        # panel column (see _build_left_panel), it should size to that
+        # column's real width instead of forcing a fixed width that may be
+        # wider or narrower than the panel.
         self.setMinimumHeight(60)
 
     def set_data(self, track, dist: float, speed: float, direction: str, proximity: str):
@@ -470,6 +474,7 @@ class FoveaXDashboardWindow(QMainWindow):
         # consecutive frames a new label must persist before the
         # DISPLAYED label actually changes.
         self._direction_label_state: dict[int, dict] = {}
+
         self._init_ui()
 
     # ------------------------------------------------------------------
@@ -482,28 +487,24 @@ class FoveaXDashboardWindow(QMainWindow):
         outer.setContentsMargins(6, 6, 6, 6)
         outer.setSpacing(6)
 
+        self.threat_toast = self._build_threat_toast(central_widget)
+        self.threat_toast.hide()
+
+        # Built before _build_body() (which builds the left panel) so
+        # _build_left_panel can lay this out directly in its own empty
+        # space below the combined ADAPTIVE RESOLUTION ZONES box, instead
+        # of floating it as a fixed-position overlay on top of the 3D view.
+        self.alert_container = QWidget()
+        self.alert_layout = QVBoxLayout(self.alert_container)
+        self.alert_layout.setContentsMargins(0, 0, 0, 0)
+        self.alert_layout.setSpacing(6)
+        self.alert_container.hide()
+
         outer.addWidget(self._build_header())
         outer.addWidget(self._build_metrics_bar())
         outer.addLayout(self._build_body(), stretch=1)
         outer.addWidget(self._build_centerline_panel())
         outer.addWidget(self._build_footer())
-
-        self.threat_toast = self._build_threat_toast(central_widget)
-        self.threat_toast.hide()
-
-        self.alert_container = QWidget(central_widget)
-        # See the matching comment in _build_threat_toast: this must be a
-        # real native window, or its raise_() can never out-rank the
-        # embedded Open3D view / per-track label widgets, which Windows
-        # always composites above a parent's own painted (non-native)
-        # content regardless of Qt's alien-widget stacking order.
-        self.alert_container.setAttribute(Qt.WA_NativeWindow, True)
-        self.alert_layout = QVBoxLayout(self.alert_container)
-        self.alert_layout.setContentsMargins(0, 0, 0, 0)
-        self.alert_layout.setSpacing(6)
-        # Positioned to avoid overlapping threat_toast at (250, 115) and drawer
-        self.alert_container.move(620, 115)
-        self.alert_container.hide()
 
         self.drawer = self._build_system_drawer(central_widget)
         self.drawer.hide()
@@ -646,9 +647,9 @@ class FoveaXDashboardWindow(QMainWindow):
 
         if not has_ground_truth or accuracy_metrics is None:
             na_text = "N/A - no ground truth for this frame"
-            self.lbl_accuracy_near.setText(f"Near (0-15m): {na_text}")
-            self.lbl_accuracy_mid.setText(f"Mid (15-35m): {na_text}")
-            self.lbl_accuracy_far.setText(f"Far (35-100m): {na_text}")
+            self.lbl_accuracy_near.setText(f"Near (0-10m): {na_text}")
+            self.lbl_accuracy_mid.setText(f"Mid (10-30m): {na_text}")
+            self.lbl_accuracy_far.setText(f"Far (30-100m): {na_text}")
             self.lbl_accuracy_overall.setText(f"Overall (0-100m): {na_text}")
             return
 
@@ -657,9 +658,9 @@ class FoveaXDashboardWindow(QMainWindow):
                 return f"{bucket_name}: N/A - no ground truth points in this bucket"
             return f"{bucket_name}: {result['accuracy']*100:.2f}% (n={result['n_points']:,})"
 
-        self.lbl_accuracy_near.setText(fmt("Near (0-15m)", accuracy_metrics.get("near")))
-        self.lbl_accuracy_mid.setText(fmt("Mid (15-35m)", accuracy_metrics.get("mid")))
-        self.lbl_accuracy_far.setText(fmt("Far (35-100m)", accuracy_metrics.get("far")))
+        self.lbl_accuracy_near.setText(fmt("Near (0-10m)", accuracy_metrics.get("near")))
+        self.lbl_accuracy_mid.setText(fmt("Mid (10-30m)", accuracy_metrics.get("mid")))
+        self.lbl_accuracy_far.setText(fmt("Far (30-100m)", accuracy_metrics.get("far")))
         self.lbl_accuracy_overall.setText(fmt("Overall (0-100m)", accuracy_metrics.get("overall")))
 
     def set_ego_motion_estimate(self, displacement_m: float | None):
@@ -742,28 +743,39 @@ class FoveaXDashboardWindow(QMainWindow):
         layers_group.setLayout(layers_layout)
         layout.addWidget(layers_group)
 
-        res_group = QGroupBox("ADAPTIVE RESOLUTION ZONES (spec)")
+        # Combined spec + real per-zone tracked-object count, one row per
+        # zone -- was two separate boxes (ADAPTIVE RESOLUTION ZONES (spec)
+        # and OBJECTS PER ZONE (live)) repeating the same Near/Middle/Far
+        # row structure; merged since they describe the same three zones.
+        # The live count comes from src/dashboard/track_labels.py::
+        # zone_object_counts, refreshed each frame in update_ui from
+        # state.tracks -- 0 objects in a zone is shown as "0", not hidden.
+        res_group = QGroupBox("ADAPTIVE RESOLUTION ZONES (spec + live objects)")
         res_layout = QVBoxLayout()
+        self._zone_labels: dict[str, QLabel] = {}
         for name, rng, res in RESOLUTION_ZONES:
-            res_layout.addWidget(QLabel(f"{name}: {rng} -> {res}"))
+            lbl = QLabel(f"{name}: {rng} -> {res} | 0 objects")
+            res_layout.addWidget(lbl)
+            self._zone_labels[name] = lbl
         res_group.setLayout(res_layout)
         layout.addWidget(res_group)
 
-        # Real per-zone tracked-object counts (same Near/Middle/Far
-        # boundaries as the spec panel above -- see
-        # src/dashboard/track_labels.py::zone_object_counts), refreshed each
-        # frame in update_ui from state.tracks. Zero objects in a zone is
-        # shown as "0", not hidden -- this is a real count, not a filtered
-        # highlight list.
-        zone_group = QGroupBox("OBJECTS PER ZONE (live)")
-        zone_layout = QVBoxLayout()
-        self._zone_labels: dict[str, QLabel] = {}
-        for name, rng, _res in RESOLUTION_ZONES:
-            lbl = QLabel(f"{name} ({rng}): 0")
-            zone_layout.addWidget(lbl)
-            self._zone_labels[name] = lbl
-        zone_group.setLayout(zone_layout)
-        layout.addWidget(zone_group)
+        # Real nearest-dynamic-object threat toast (built in _init_ui,
+        # populated in update_ui): previously a fixed-position overlay
+        # floating on top of the 3D view at screen coords (250, 115).
+        # Laid out here instead, between the zone box and the approaching-
+        # object alert cards below -- hidden (no reserved space) when no
+        # dynamic object is currently tracked.
+        layout.addWidget(self.threat_toast)
+
+        # Real nearby-object alert cards (built in _init_ui, populated by
+        # _update_alerts): previously a fixed-position overlay floating on
+        # top of the 3D view at screen coords (620, 115), which also meant
+        # fighting the embedded view's native child windows for z-order.
+        # Laid out here instead, in what was empty space below the zone
+        # panel -- hidden (no minimum height reserved) when there are no
+        # real alerts.
+        layout.addWidget(self.alert_container)
 
         layout.addStretch(1)
         return panel
@@ -923,9 +935,9 @@ class FoveaXDashboardWindow(QMainWindow):
         self.lbl_accuracy_note.setWordWrap(True)
         self.lbl_accuracy_note.setStyleSheet(NOTE_STYLE)
         accuracy_layout.addWidget(self.lbl_accuracy_note)
-        self.lbl_accuracy_near = QLabel("Near (0-15m): --")
-        self.lbl_accuracy_mid = QLabel("Mid (15-35m): --")
-        self.lbl_accuracy_far = QLabel("Far (35-100m): --")
+        self.lbl_accuracy_near = QLabel("Near (0-10m): --")
+        self.lbl_accuracy_mid = QLabel("Mid (10-30m): --")
+        self.lbl_accuracy_far = QLabel("Far (30-100m): --")
         self.lbl_accuracy_overall = QLabel("Overall (0-100m): --")
         self.lbl_accuracy_overall.setStyleSheet(f"font-size: {FONT_SIZE_HEADLINE}; font-weight: 700; color: {COLOR_SAFE};")
         for w in [self.lbl_accuracy_near, self.lbl_accuracy_mid,
@@ -1007,18 +1019,14 @@ class FoveaXDashboardWindow(QMainWindow):
         # frame's last-known size instead of reflowing to fit.
         self.lbl_toast_text.setWordWrap(True)
         layout.addWidget(self.lbl_toast_text)
-        toast.setFixedWidth(340)
         toast.setMinimumHeight(50)
-        toast.move(250, 115)
-        # A plain (non-native) widget's raise_() only reorders it among
-        # other alien widgets sharing the same backing store -- it cannot
-        # out-rank a real native child window (the reparented Open3D view,
-        # or the per-track label widgets in Open3DEmbedWidget, both
-        # WA_NativeWindow), which Windows always composites on top of a
-        # parent's own painted content regardless of Qt's stacking order.
-        # Making this widget itself native lets its raise_() actually issue
-        # a real Win32 z-order change against those siblings.
-        toast.setAttribute(Qt.WA_NativeWindow, True)
+        # No longer a fixed-position overlay floating on top of the 3D view
+        # (previously .move(250, 115) + WA_NativeWindow + bring_to_absolute_top
+        # to fight the embedded view's native child windows for z-order --
+        # see the matching alert_container history). Laid out directly in
+        # the left panel now (see _build_left_panel), between the
+        # ADAPTIVE RESOLUTION ZONES box and the alert cards, so it no
+        # longer overlaps any native child window at all.
         return toast
 
     def _build_system_drawer(self, parent):
@@ -1116,19 +1124,17 @@ class FoveaXDashboardWindow(QMainWindow):
             child = self.alert_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
-                
+
         if not alerts:
             self.alert_container.hide()
             return
-            
+
         for dist, track, speed, direction, prox in alerts:
             card = AlertCard(self.alert_container)
             card.set_data(track, dist, speed, direction, prox)
             self.alert_layout.addWidget(card)
-            
-        self.alert_container.adjustSize()
+
         self.alert_container.show()
-        bring_to_absolute_top(int(self.alert_container.winId()))
 
     # ------------------------------------------------------------------
     # Data wiring
@@ -1180,10 +1186,13 @@ class FoveaXDashboardWindow(QMainWindow):
             self.lbl_m_gpu.setText("N/A")
             self.lbl_m_vram.setText("N/A")
 
-        # 1b. Real per-zone object counts (same tracks as the list below).
+        # 1b. Real per-zone object counts (same tracks as the list below),
+        # written into the combined spec+live row for each zone.
         counts = zone_object_counts(state.tracks)
-        for name, rng, _res in RESOLUTION_ZONES:
-            self._zone_labels[name].setText(f"{name} ({rng}): {counts[name]}")
+        for name, rng, res in RESOLUTION_ZONES:
+            self._zone_labels[name].setText(
+                f"{name}: {rng} -> {res} | {counts[name]} objects"
+            )
 
         # 2. Update Tracked Objects List + nearest dynamic threat
         self.list_tracks.clear()
@@ -1207,9 +1216,7 @@ class FoveaXDashboardWindow(QMainWindow):
                 f"DYNAMIC OBJECT: {nearest_dynamic.class_name} #{nearest_dynamic.track_id} "
                 f"at {nearest_dist:.1f} m, {speed:.1f} m/s"
             )
-            self.threat_toast.adjustSize()
             self.threat_toast.show()
-            bring_to_absolute_top(int(self.threat_toast.winId()))
         else:
             self.lbl_threat.setText("No dynamic objects tracked.")
             self.threat_toast.hide()

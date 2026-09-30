@@ -23,3 +23,6 @@ models/
 graphify-out/
 src/graphify-out/
 .claude/
+# Packaging output
+dist/
+build/

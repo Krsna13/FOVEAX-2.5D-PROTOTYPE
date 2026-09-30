@@ -22,8 +22,10 @@ from src.perception.terrain_features import (
     is_overhang,
     is_probable_rock_heuristic,
     local_ground_z_percentile,
+    local_ground_z_percentile_via_tree,
     plane_normal_pca,
     points_in_oriented_box,
+    points_in_oriented_box_via_tree,
     slope_angle_deg,
 )
 
@@ -154,6 +156,80 @@ class TestPointsInOrientedBox:
         c, s = np.array([0, 0, 0]), np.array([4, 2, 2])
         assert not points_in_oriented_box(pts, c, s, margin=0.01)[0]
         assert points_in_oriented_box(pts, c, s, margin=0.1)[0]
+
+
+class TestTreeBasedFunctionsMatchBruteForce:
+    """The tree-based fast paths (used by
+    DataStreamerThread._attach_terrain_features to avoid an O(n_detections
+    x n_points) scan every frame) must return exactly the results the
+    brute-force originals do -- not an approximation.
+
+    Regression coverage for a real bug caught during this: an earlier
+    version of the safe candidate-radius formula used
+    0.5*||size|| + margin, which understates a margin-padded box's true
+    half-diagonal (the margin pads each axis before the diagonal is taken,
+    it doesn't add linearly to an unpadded diagonal) and silently dropped
+    real edge/corner points. Caught by comparing against real RELLIS-3D
+    detections, not by these small synthetic cases alone -- kept here too
+    since they pin the exact failure mode.
+    """
+
+    def test_matches_brute_force_on_a_case_that_previously_failed(self):
+        """This exact geometry (from a real RELLIS-3D detection) exposed
+        the half-diagonal bug: the old (wrong) radius formula excluded 2-3
+        real edge points that the correct box test includes."""
+        rng = np.random.default_rng(0)
+        center = np.array([4.27, -2.45, 0.406])
+        size = np.array([0.243, 0.313, 0.271])  # real, non-cubic proportions
+        # Points scattered across and beyond the padded box, including near
+        # the corners where the old formula's undersized sphere missed them.
+        offsets = rng.uniform(-0.4, 0.4, size=(500, 3))
+        pts_xyz = center + offsets
+        pts = np.hstack([pts_xyz, np.ones((500, 1))]).astype(np.float32)
+
+        from scipy.spatial import cKDTree
+
+        tree = cKDTree(pts[:, :3])
+        old_mask = points_in_oriented_box(pts, center, size, margin=0.1)
+        new_mask = points_in_oriented_box_via_tree(tree, pts, center, size, margin=0.1)
+        np.testing.assert_array_equal(old_mask, new_mask)
+        assert old_mask.sum() > 0  # the case must actually exercise real matches
+
+    def test_matches_brute_force_across_many_random_boxes(self):
+        rng = np.random.default_rng(1)
+        pts_xyz = rng.uniform(-5, 5, size=(2000, 3))
+        pts = np.hstack([pts_xyz, np.ones((2000, 1))]).astype(np.float32)
+        from scipy.spatial import cKDTree
+
+        tree = cKDTree(pts[:, :3])
+        for _ in range(20):
+            center = rng.uniform(-4, 4, size=3)
+            size = rng.uniform(0.1, 2.0, size=3)
+            old_mask = points_in_oriented_box(pts, center, size, margin=0.1)
+            new_mask = points_in_oriented_box_via_tree(tree, pts, center, size, margin=0.1)
+            np.testing.assert_array_equal(old_mask, new_mask)
+
+    def test_ground_percentile_matches_brute_force(self):
+        rng = np.random.default_rng(2)
+        pts_xyz = rng.uniform(-5, 5, size=(1000, 2))
+        z = rng.uniform(-1, 1, size=1000)
+        pts = np.column_stack([pts_xyz, z, np.ones(1000)]).astype(np.float32)
+        from scipy.spatial import cKDTree
+
+        tree2d = cKDTree(pts[:, :2])
+        for _ in range(10):
+            center_xy = rng.uniform(-4, 4, size=2)
+            old_val = local_ground_z_percentile(pts, center_xy, radius_m=1.5)
+            new_val = local_ground_z_percentile_via_tree(tree2d, pts, center_xy, radius_m=1.5)
+            assert old_val == pytest.approx(new_val, abs=1e-9)
+
+    def test_ground_percentile_none_when_no_points_in_radius_matches(self):
+        pts = np.array([[100.0, 100.0, 0.0, 1.0]], dtype=np.float32)
+        from scipy.spatial import cKDTree
+
+        tree2d = cKDTree(pts[:, :2])
+        assert local_ground_z_percentile(pts, (0.0, 0.0), radius_m=1.0) is None
+        assert local_ground_z_percentile_via_tree(tree2d, pts, (0.0, 0.0), radius_m=1.0) is None
 
 
 class TestRockHeuristic:

@@ -53,9 +53,9 @@ from src.tracking.multi_object_tracker import MultiObjectTracker
 # Real resolution zones from the Problem Statement spec (src/07_adaptive_2point5d_map.py
 # SPEC_ZONES_100M), quoted directly -- not re-derived or guessed.
 RESOLUTION_ZONES = [
-    {"name": "Near", "r_min": 0.0, "r_max": 15.0, "resolution_m": 0.05},
-    {"name": "Middle", "r_min": 15.0, "r_max": 35.0, "resolution_m": 0.20},
-    {"name": "Far", "r_min": 35.0, "r_max": 100.0, "resolution_m": 0.50},
+    {"name": "Near", "r_min": 0.0, "r_max": 10.0, "resolution_m": 0.05},
+    {"name": "Middle", "r_min": 10.0, "r_max": 30.0, "resolution_m": 0.20},
+    {"name": "Far", "r_min": 30.0, "r_max": 100.0, "resolution_m": 0.50},
 ]
 
 # Canonical traversability convention (src/06_terrain_traversability.py).

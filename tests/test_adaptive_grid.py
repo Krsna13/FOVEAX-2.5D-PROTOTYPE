@@ -33,16 +33,16 @@ class TestAdaptiveZonesConfig:
 
         assert near.name == "Near"
         assert near.r_min == 0.0
-        assert near.r_max == 15.0
+        assert near.r_max == 10.0
         assert near.resolution == 0.05  # 5 cm
 
         assert mid.name == "Middle"
-        assert mid.r_min == 15.0
-        assert mid.r_max == 35.0
+        assert mid.r_min == 10.0
+        assert mid.r_max == 30.0
         assert mid.resolution == 0.20  # 20 cm
 
         assert far.name == "Far"
-        assert far.r_min == 35.0
+        assert far.r_min == 30.0
         assert far.r_max == 100.0  # 100m
         assert far.resolution == 0.50  # 50 cm
 
@@ -76,15 +76,15 @@ class TestMemoryReductionMetric:
 class TestCreateZoneMap:
     def test_zone_filtering_and_layers(self) -> None:
         """Test points inside zone are mapped to z_min, z_max, point_count."""
-        # 10 points at distance 10m (inside Near zone 0-15m)
+        # 10 points at distance 8m (inside Near zone 0-10m)
         rng = np.random.default_rng(42)
         n = 10
-        x = np.full(n, 6.0, dtype=np.float32)
-        y = np.full(n, 8.0, dtype=np.float32)  # distance = 10.0m
+        x = np.full(n, 4.8, dtype=np.float32)
+        y = np.full(n, 6.4, dtype=np.float32)  # distance = 8.0m
         z = np.linspace(0.5, 2.5, n, dtype=np.float32)
         pts = np.column_stack([x, y, z])
 
-        zone = SPEC_ZONES_100M[0]  # Near (0-15m, 5cm res)
+        zone = SPEC_ZONES_100M[0]  # Near (0-10m, 5cm res)
         res = create_zone_map(pts, zone, x_min=-20.0, x_max=20.0, y_min=-20.0, y_max=20.0)
 
         assert res["occupied"].sum() == 1  # all in same cell
@@ -94,7 +94,7 @@ class TestCreateZoneMap:
         assert np.nanmax(res["height_range"]) == pytest.approx(2.0)
 
     def test_points_outside_zone_are_excluded(self) -> None:
-        # Point at 50m distance (outside Near zone 0-15m)
+        # Point at 50m distance (outside Near zone 0-10m)
         pts = np.array([[30.0, 40.0, 1.0]], dtype=np.float32)
         zone = SPEC_ZONES_100M[0]
         res = create_zone_map(pts, zone, x_min=-100.0, x_max=100.0, y_min=-100.0, y_max=100.0)

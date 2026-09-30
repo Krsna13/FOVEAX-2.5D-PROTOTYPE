@@ -255,10 +255,10 @@ def main(argv: list[str] | None = None) -> None:
     pred_labels = np.concatenate(pred_chunks)
     distance = np.concatenate(dist_chunks)
 
-    # Buckets: Near (0-15m), Mid (15-35m), Far (35-100m)
-    mask_near = (distance >= 0.0) & (distance < 15.0)
-    mask_mid = (distance >= 15.0) & (distance < 35.0)
-    mask_far = (distance >= 35.0) & (distance <= 100.0)
+    # Buckets: Near (0-10m), Mid (10-30m), Far (30-100m)
+    mask_near = (distance >= 0.0) & (distance < 10.0)
+    mask_mid = (distance >= 10.0) & (distance < 30.0)
+    mask_far = (distance >= 30.0) & (distance <= 100.0)
 
     scope = (
         f"{args.sequence}/{args.frame}"
@@ -273,9 +273,9 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Taxonomy: {args.taxonomy}  Checkpoint: {args.checkpoint}")
     print(f"========================================================")
 
-    compute_metrics(gt_labels, pred_labels, mask_near, "Near (0-15m)")
-    compute_metrics(gt_labels, pred_labels, mask_mid, "Mid (15-35m)")
-    compute_metrics(gt_labels, pred_labels, mask_far, "Far (35-100m)")
+    compute_metrics(gt_labels, pred_labels, mask_near, "Near (0-10m)")
+    compute_metrics(gt_labels, pred_labels, mask_mid, "Mid (10-30m)")
+    compute_metrics(gt_labels, pred_labels, mask_far, "Far (30-100m)")
     
     # Overall
     mask_overall = (distance >= 0.0) & (distance <= 100.0)

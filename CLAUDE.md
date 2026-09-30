@@ -58,7 +58,8 @@ in for deployment.`
 
 ### Key interfaces (the swap points)
 - `SemanticPredictor` (`src/perception/semantic_predictor.py`) — `GroundTruthSemanticPredictor`,
-  `MockSemanticPredictor`, `SalsaNextPredictor` all implement this; swap via `--source`.
+  `MockSemanticPredictor`, `SalsaNextPredictor` all implement this; swap via `--source` on
+  `src/10_ai_semantic_2point5d_map.py` and via `--predictor` on `src/13_realtime_dashboard.py`.
   `GroundTruthSemanticPredictor` accepts either raw SemanticKITTI-packed `labels_raw` or
   already-remapped `foveax_class_ids` (the latter from `rellis3d_loader.py`) — mutually exclusive
   constructor args.
@@ -69,11 +70,19 @@ in for deployment.`
   not AI) vs `OpenPCDetPointPillarsDetector` (real AI); swap via `--detector`.
 - `SalsaNextPredictor.predict()` is real, working inference (spherical range-image projection ->
   model forward pass -> reverse re-projection -> SemanticKITTI-to-FOVEAX remap), not a stub — see
-  `src/perception/range_projection.py`. **Verified accurate on SemanticKITTI (93.3% per-point
-  agreement with ground truth) but currently unusable on RELLIS-3D** (11.1% agreement, 85.8% of
-  points predicted VEHICLE in a scene with zero real vehicles) due to a sensor/intensity domain
-  mismatch between the checkpoint's training sensor (Velodyne HDL-64E) and RELLIS-3D's Ouster
-  OS1-64 — full diagnosis in `docs/rellis3d_integration.md`.
+  `src/perception/range_projection.py`. Two checkpoints, selected by the `taxonomy` constructor arg:
+  - `taxonomy="semantickitti"` — official pretrained checkpoint
+    (`models/salsanext/pretrained/pretrained/`). 94.98% on SemanticKITTI (UNKNOWN excluded). On
+    RELLIS-3D it scores 6.65% raw / 22.26% with sensor adaptation (Ouster FOV `fov_up=17.02,
+    fov_down=-16.44` + `rescale_intensity`) — a Velodyne-vs-Ouster domain gap, diagnosed in
+    `docs/rellis3d_integration.md`.
+  - `taxonomy="foveax"` — fine-tuned on RELLIS-3D with an 8-class FOVEAX head
+    (`models/salsanext/rellis3d_finetuned/best.pt`, trained by `src/14_finetune_salsanext.py`).
+    81.53% on held-out sequence `00000`, but forgets SemanticKITTI (23.97%). Its argmax is already
+    a FOVEAX ID — never pass it through `learning_map_inv`/`SEMANTICKITTI_TO_FOVEAX`.
+  - Numbers and methodology: `docs/validation_results.md` (source of truth). The dashboard's
+    `make_semantic_predictor` (`export_web_dashboard_data.py`) has no `--taxonomy` flag, so the
+    live dashboard can currently only load the pretrained (`semantickitti`) checkpoint.
 - `FrameState` / `HardwareMetrics` (`src/dashboard/dashboard_state.py`) — the single struct that
   carries points, grid_maps, tracks, and metrics from `DataStreamerThread` into both the 2D (Qt) and
   3D (Open3D) dashboard panels. Also carries `coordinate_warnings` from
@@ -93,17 +102,30 @@ src/
 ├── 08_spatial_importance_roi.py  Phase 5: ROI importance blending
 ├── 09_semantickitti_semantic_map.py  Phase 6: ground-truth semantic grid
 ├── 10_ai_semantic_2point5d_map.py    Phase 7: pluggable AI semantic segmentation CLI
+├── 10b_eval_distance_metrics.py      Near/Mid/Far accuracy + confusion matrix; its
+│                                      compute_metrics() is the ONE shared scorer (dashboard too)
 ├── 11_object_detection_tracking.py   Phase 8A/8B: detection + tracking CLI
 ├── 12_env_inspector.py           Environment/hardware capability check
 ├── 13_optimize_and_deploy.py     Phase 11: CLI for profiling / TensorRT engine build
 ├── 13_realtime_dashboard.py      Phase 9: dashboard entry point (imports torch before PyQt5 —
-│                                  see comment in file, DLL load-order constraint on Windows)
+│                                  see comment in file, DLL load-order constraint on Windows);
+│                                  modes: live GUI (default), --headless, --profile
+├── 14_finetune_salsanext.py      Stage 6: fine-tune SalsaNext on RELLIS-3D (FOVEAX 8-class head)
+├── prepare_rellis3d_for_salsanext_training.py  Converts RELLIS-3D into upstream SalsaNext's
+│                                  sequences/ layout (alternative path to training/)
 ├── perception/                   ObjectDetector, SemanticPredictor and their implementations,
 │                                  rellis3d_loader.py (RELLIS-3D file I/O + class remap),
-│                                  range_projection.py (spherical projection for SalsaNext)
+│                                  range_projection.py (spherical projection for SalsaNext),
+│                                  terrain_features.py (per-detection slope/clearance/overhang,
+│                                  hazard kind), overhead_detection.py, centerline_profile.py,
+│                                  ego_motion_estimate.py (informational ICP only, no odometry)
+├── training/                     rellis3d_dataset.py: splits (seq 00000 = held-out test) and
+│                                  range-image samples, preprocessing identical to predict()
 ├── tracking/                     MultiObjectTracker, TrackState (Kalman filter tracking)
-├── dashboard/                    FrameState/HardwareMetrics, DataStreamerThread (QThread),
-│                                  Qt main window, Open3D viewer process
+├── dashboard/                    FrameState/HardwareMetrics, DataStreamerThread.process_frame,
+│                                  Qt main window, Open3D viewer process, track_labels.py (3D box
+│                                  labels as Qt widgets), win32_embed.py (reparent Open3D window),
+│                                  stage_timer.py (--profile harness), export_* (web JSON, PNGs)
 ├── deployment/                   vram_budget, model_exporter (ONNX), tensorrt_builder,
 │                                  calibration (INT8), optimized_inference, profiler
 └── integrations/                 ROS 2 PointCloud2 <-> numpy adapter, tf2 adapter
@@ -113,10 +135,39 @@ ros2_ws/src/foveax_ros/foveax_ros/   Phase 10: lidar_node.py (plain rclpy.Node, 
                                       diagnostics.py
 
 docs/                              Phase-specific setup/implementation notes
+packaging/                         PyInstaller spec + build_app.py: standalone Windows app with a bundled
+                                    RELLIS-3D sample, shipped on GitHub Releases (docs/packaging.md)
 outputs/phaseN/                    Generated artifacts per phase (git-ignored where large)
 tests/                             pytest suite; conftest.py enforces torch-before-PyQt5
                                     import order for the whole session (see below)
 ```
+
+## Dashboard Runtime Model (read before changing dashboard code)
+
+- **The GUI does not use `DataStreamerThread.run()`.** `DashboardApplication` (in
+  `src/13_realtime_dashboard.py`) is a pull-based playback controller: a `QTimer` on the Qt thread
+  calls `streamer.process_frame(idx, ...)` directly and stores each `FrameState` in
+  `_frame_cache[idx]`. STEP back replays cached states (the Kalman tracker is never run backward);
+  RESTART / environment switch replace the tracker and clear the cache, and frame indices restart
+  at 0. `run()` (the QThread loop) is only a legacy path.
+- **Cached `FrameState`s must own their data.** Anything placed in a `FrameState` (grid arrays,
+  `HardwareMetrics`) must not be a view of, or the same object as, a buffer reused on the next
+  frame — step-back replays it later.
+- **Any per-frame throttle cache in `DataStreamerThread` must handle frame indices going
+  backward** (restart/environment switch) — a `frame_idx - cached_idx < N` check alone serves the
+  previous run's data.
+- The Open3D 3D view runs in a **separate process** fed through `o3d_queue` (drop-oldest), and its
+  GLFW window is reparented into the Qt window via `win32_embed.py` (`--separate-windows` opts out).
+  Alert cards and the threat toast are laid out inside the left panel, not floated over the 3D
+  view — floating overlays lost z-order fights with the native Open3D child window
+  (`tests/test_alert_card_placement.py`).
+- `state.metrics.fps` is the rate passed into `process_frame` (the target playback rate), **not a
+  measured frame rate**. Measure with `--profile` (per-stage mean/p50/p95 via
+  `src/dashboard/stage_timer.py`, CUDA-synchronized for GPU stages, 1 Hz `nvidia-smi` log to
+  `outputs/phase12/gpu_util_profile.csv`). The profile runs Open3D in-process and off-screen, so its
+  `open3d_update` cost is not what the separate-process live GUI pays per frame.
+- Tests often build `DataStreamerThread` / `FoveaXDashboardWindow` via `__new__` (skipping
+  `__init__`), so attributes introduced only in `__init__` break them.
 
 ## Environment Notes (read before touching dependencies)
 
@@ -125,10 +176,15 @@ tests/                             pytest suite; conftest.py enforces torch-befo
   caused real, reproducible corruption during large package installs — OneDrive syncing mid-write).
   It was then moved to `C:\dev\foveax_venv`, and then again to `C:\FOVEAX 2.5D\foveax_venv`
   (sibling of this repo, not inside it) after the whole project was relocated off OneDrive. **As of
-  2026-09-11 the real venv is at `C:\FOVEAX 2.5D\foveax_venv`** — `C:\dev\foveax_venv` no longer
+  2026-09-11 (re-confirmed 2026-09-30) the real venv is at `C:\FOVEAX 2.5D\foveax_venv`** (Python
+  3.11) — `C:\dev\foveax_venv` no longer
   exists. Do not trust a hardcoded path from an old session/transcript; run
   `Test-Path <candidate>\Scripts\python.exe` first. Same caution applies to this repo's own root —
   it has also moved multiple times (currently `C:\FOVEAX 2.5D\FOVEAX_2.5D_TRAIL`).
+- **Data and third-party locations:** RELLIS-3D lives at `C:\dev\data\rellis3d\Rellis-3D\<00000-00004>\`
+  (the loaders' default root; `data/rellis3d` is only a fallback). SemanticKITTI seq `00` is at
+  `data/semantic_kitti/dataset/sequences/00/`. `external/SalsaNext` is cloned at `7548c12`;
+  OpenPCDet lives at `C:\FOVEAX 2.5D\external\OpenPCDet` (outside this repo).
 - **PyTorch must be the `cu130` build** (`torch==2.14.0+cu130`), not `cu126`. The RTX 5050 (Blackwell,
   compute capability `sm_120`) has no kernels in `cu126` — `cuda.is_available()` reports `True` but
   any real op fails with `no kernel image is available for execution on the device`. Always verify
@@ -146,4 +202,7 @@ This project has a graphify knowledge graph at graphify-out/.
 Rules:
 - Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
 - If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
-- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
+- After modifying code files in this session, run `graphify update .` to keep the graph current (AST extraction is local and free)
+- `.graphifyignore` keeps `external/`, `models/`, `data/`, `outputs/` out of the graph (third-party clones, checkpoints, datasets, generated artifacts)
+- Caveat: the installed graphify build (`ai.py`) always sends community node labels (function/class names, up to 20 per cluster) to pollinations.ai to generate cluster summaries — no source code, but there is no opt-out flag
+- `src/graphify-out/` is an older src-only copy from 2026-09-10; `graphify-out/` at the repo root is the current graph

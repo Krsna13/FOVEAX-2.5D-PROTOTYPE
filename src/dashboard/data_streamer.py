@@ -1,5 +1,6 @@
 import math
 import time
+from contextlib import nullcontext
 import numpy as np
 import psutil
 try:
@@ -409,7 +410,7 @@ class DataStreamerThread(QThread):
         evaluation -- imported and called directly, not reimplemented.
 
         Uses the identical bucket boundaries as that script's main():
-        Near 0-15m, Mid 15-35m, Far 35-100m, Overall 0-100m (2D radial
+        Near 0-10m, Mid 10-30m, Far 30-100m, Overall 0-100m (2D radial
         distance). compute_metrics() itself prints a full report to
         stdout per call (by design, for the offline CLI tool) -- that
         output is redirected away here since this runs every live frame,
@@ -426,15 +427,15 @@ class DataStreamerThread(QThread):
         y = points[:, 1]
         distance = np.sqrt(x ** 2 + y ** 2)
 
-        mask_near = (distance >= 0.0) & (distance < 15.0)
-        mask_mid = (distance >= 15.0) & (distance < 35.0)
-        mask_far = (distance >= 35.0) & (distance <= 100.0)
+        mask_near = (distance >= 0.0) & (distance < 10.0)
+        mask_mid = (distance >= 10.0) & (distance < 30.0)
+        mask_far = (distance >= 30.0) & (distance <= 100.0)
         mask_overall = (distance >= 0.0) & (distance <= 100.0)
 
         with contextlib.redirect_stdout(io.StringIO()):
-            near = compute_metrics(gt_labels, pred_labels, mask_near, "Near (0-15m)")
-            mid = compute_metrics(gt_labels, pred_labels, mask_mid, "Mid (15-35m)")
-            far = compute_metrics(gt_labels, pred_labels, mask_far, "Far (35-100m)")
+            near = compute_metrics(gt_labels, pred_labels, mask_near, "Near (0-10m)")
+            mid = compute_metrics(gt_labels, pred_labels, mask_mid, "Mid (10-30m)")
+            far = compute_metrics(gt_labels, pred_labels, mask_far, "Far (30-100m)")
             overall = compute_metrics(gt_labels, pred_labels, mask_overall, "Overall (0-100m)")
 
         return {"near": near, "mid": mid, "far": far, "overall": overall}
@@ -560,7 +561,15 @@ class DataStreamerThread(QThread):
     def process_frame(self, frame_idx: int, timestamp_s: float, fps: float = 10.0) -> FrameState:
         """Process a single frame through detection, tracking, grid mapping, and metrics."""
         t_start = time.perf_counter()
-        points, gt_labels = self._get_frame_data(frame_idx)
+        # Optional StageTimer (set only by `--profile`); None => every region
+        # below is a no-op and behavior is identical to the un-instrumented code.
+        _timer = getattr(self, "stage_timer", None)
+
+        def _t(name):
+            return _timer.time(name) if _timer is not None else nullcontext()
+
+        with _t("load"):
+            points, gt_labels = self._get_frame_data(frame_idx)
         # gt_labels is REAL ground truth ONLY (loaded from a .label file or
         # the RELLIS-3D loader) -- never a model prediction. Kept separate
         # from any prediction below so the two can be honestly compared.
@@ -600,7 +609,8 @@ class DataStreamerThread(QThread):
                     pred_labels_for_accuracy = None
 
             if pred_labels_for_accuracy is not None:
-                accuracy_metrics = self._compute_live_accuracy(points, gt_labels, pred_labels_for_accuracy)
+                with _t("live_accuracy_metrics"):
+                    accuracy_metrics = self._compute_live_accuracy(points, gt_labels, pred_labels_for_accuracy)
 
         # Coordinate frame sanity check
         if getattr(self.detector, "_SOURCE", "") != "mock_geometric_clusterer" and len(points) > 0:
@@ -609,23 +619,25 @@ class DataStreamerThread(QThread):
                 print(f"[WARNING] Point cloud X range out of expected KITTI coordinate bounds (x_max={x_max_cloud:.1f}).")
 
         # Detect & Track with semantic cross-referencing
-        try:
-            detections = self.detector.detect(points, timestamp_s=timestamp_s, semantic_labels=semantic_labels)
-        except TypeError:
-            detections = self.detector.detect(points, timestamp_s=timestamp_s)
+        with _t("clustering_heuristics"):
+            try:
+                detections = self.detector.detect(points, timestamp_s=timestamp_s, semantic_labels=semantic_labels)
+            except TypeError:
+                detections = self.detector.detect(points, timestamp_s=timestamp_s)
 
-        from src.perception.object_detector import classify_cluster_from_semantics
-        for d in detections:
-            if d.class_name == "unknown_obstacle":
-                cid, cname = classify_cluster_from_semantics(
-                    d.center_xyz, d.size_lwh, points, semantic_labels, fallback_class="unclassified"
-                )
-                d.class_id = cid
-                d.class_name = cname
+            from src.perception.object_detector import classify_cluster_from_semantics
+            for d in detections:
+                if d.class_name == "unknown_obstacle":
+                    cid, cname = classify_cluster_from_semantics(
+                        d.center_xyz, d.size_lwh, points, semantic_labels, fallback_class="unclassified"
+                    )
+                    d.class_id = cid
+                    d.class_name = cname
 
-        self._attach_terrain_features(detections, points)
+            self._attach_terrain_features(detections, points)
 
-        tracks = self.tracker.update(detections, timestamp_s=timestamp_s)
+        with _t("kalman_tracking"):
+            tracks = self.tracker.update(detections, timestamp_s=timestamp_s)
 
         track_velocities = {
             t.track_id: (float(t.state[3]), float(t.state[4]))
@@ -633,42 +645,44 @@ class DataStreamerThread(QThread):
         }
 
         # Grids
-        grids = self._generate_maps(points, tracks)
+        with _t("grid_maps_hazards"):
+            grids = self._generate_maps(points, tracks)
 
         t_end = time.perf_counter()
         latency = t_end - t_start
         target_fps = self.rate_hz
 
-        metrics = self._get_hardware_metrics(fps, target_fps, latency)
+        with _t("metrics_state_logging"):
+            metrics = self._get_hardware_metrics(fps, target_fps, latency)
 
-        extras = getattr(self, "_last_extras", {})
-        state = FrameState(
-            frame_idx=frame_idx,
-            timestamp_s=timestamp_s,
-            points=points,
-            tracks=tracks,
-            track_velocities=track_velocities,
-            grid_maps=grids,
-            grid_resolution_m=self.grid_res,
-            grid_extent_m=self.grid_extent,
-            metrics=metrics,
-            road_width_m=extras.get("road_width_m"),
-            elevation_profile=extras.get("elevation_profile", []),
-            elevation_hazards_m=extras.get("elevation_hazards_m", []),
-            hazard_clusters=extras.get("hazard_clusters", []),
-            mean_uncertainty=extras.get("mean_uncertainty"),
-            occupied_fraction=extras.get("occupied_fraction"),
-            centerline_profile=extras.get("centerline_profile", []),
-            centerline_markers=extras.get("centerline_markers", []),
-            has_ground_truth=has_ground_truth,
-            predictor_mode=self.predictor_mode,
-            accuracy_metrics=accuracy_metrics,
-        )
-        state.coordinate_warnings = assert_coordinate_frame_consistency(state)
-        for w in state.coordinate_warnings:
-            print(f"[WARNING] {w}")
+            extras = getattr(self, "_last_extras", {})
+            state = FrameState(
+                frame_idx=frame_idx,
+                timestamp_s=timestamp_s,
+                points=points,
+                tracks=tracks,
+                track_velocities=track_velocities,
+                grid_maps=grids,
+                grid_resolution_m=self.grid_res,
+                grid_extent_m=self.grid_extent,
+                metrics=metrics,
+                road_width_m=extras.get("road_width_m"),
+                elevation_profile=extras.get("elevation_profile", []),
+                elevation_hazards_m=extras.get("elevation_hazards_m", []),
+                hazard_clusters=extras.get("hazard_clusters", []),
+                mean_uncertainty=extras.get("mean_uncertainty"),
+                occupied_fraction=extras.get("occupied_fraction"),
+                centerline_profile=extras.get("centerline_profile", []),
+                centerline_markers=extras.get("centerline_markers", []),
+                has_ground_truth=has_ground_truth,
+                predictor_mode=self.predictor_mode,
+                accuracy_metrics=accuracy_metrics,
+            )
+            state.coordinate_warnings = assert_coordinate_frame_consistency(state)
+            for w in state.coordinate_warnings:
+                print(f"[WARNING] {w}")
 
-        self._log_session(state)
+            self._log_session(state)
         return state
 
     def run(self):

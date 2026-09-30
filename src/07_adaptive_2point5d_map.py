@@ -15,9 +15,9 @@ class AdaptiveZone:
 
 # Problem Statement (PS-26053) full-scale automotive specification (100m range)
 SPEC_ZONES_100M = [
-    AdaptiveZone("Near", 0.0, 15.0, 0.05, "#e74c3c"),     # 0-15m: 5cm cells (reactive safety)
-    AdaptiveZone("Middle", 15.0, 35.0, 0.20, "#f1c40f"),  # 15-35m: 20cm cells (path planning)
-    AdaptiveZone("Far", 35.0, 100.0, 0.50, "#3498db"),    # 35-100m: 50cm cells (situational awareness)
+    AdaptiveZone("Near", 0.0, 10.0, 0.05, "#e74c3c"),     # 0-10m: 5cm cells (reactive safety)
+    AdaptiveZone("Middle", 10.0, 30.0, 0.20, "#f1c40f"),  # 10-30m: 20cm cells (path planning)
+    AdaptiveZone("Far", 30.0, 100.0, 0.50, "#3498db"),    # 30-100m: 50cm cells (situational awareness)
 ]
 
 # Demo zones scaled for the small Open3D sample cloud
@@ -280,9 +280,9 @@ def save_metrics(
         "============================================================",
         "Perception Volume: 200m x 200m x 8m (Range: 100m)",
         "Foveated Resolution Zones:",
-        "  - Near   ( 0 - 15m):  5 cm resolution (0.05m)",
-        "  - Middle (15 - 35m): 20 cm resolution (0.20m)",
-        "  - Far    (35 - 100m): 50 cm resolution (0.50m)",
+        "  - Near   ( 0 - 10m):  5 cm resolution (0.05m)",
+        "  - Middle (10 - 30m): 20 cm resolution (0.20m)",
+        "  - Far    (30 - 100m): 50 cm resolution (0.50m)",
         "",
         f"Equivalent Uniform 3D Voxel Grid (at 5cm): {spec_metrics['total_3d_voxels']:,} voxels ({spec_metrics['mem_3d_mb']:.1f} MB at 1B/voxel)",
         f"Equivalent Uniform 2.5D Grid (at 5cm)     : {spec_metrics['total_uniform_2d_cells']:,} cells ({spec_metrics['mem_uniform_2d_mb']:.1f} MB at 16B/cell)",

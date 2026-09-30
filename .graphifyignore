@@ -1,0 +1,12 @@
+# Keep the knowledge graph to this project's own code.
+# external/ (SalsaNext clone) and models/ (checkpoints) are third-party, not
+# FOVEAX architecture; data/ and outputs/ are datasets and generated artifacts.
+external/
+models/
+data/
+outputs/
+graphify-out/
+src/graphify-out/
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/

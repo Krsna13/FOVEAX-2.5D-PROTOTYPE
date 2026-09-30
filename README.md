@@ -20,7 +20,9 @@ then layers real terrain traversability scoring, semantic
 classification, and 3D object tracking on top of it, all visualized in
 a live PyQt5 + Open3D dashboard.
 
-🖥️ **Run the dashboard**: `python src/13_realtime_dashboard.py` (see [Setup](#4-setup) and [How to Run](#5-how-to-run) below)
+⬇️ **Download the Windows app** (PyQt5 dashboard, no Python needed): `FOVEAX-windows.zip` on the [Releases page](https://github.com/Krsna13/FOVEAX-2.5D-PROTOTYPE/releases) — unzip and double-click `FOVEAX.exe`. See [`docs/packaging.md`](docs/packaging.md).
+
+🖥️ **Run from source**: `python src/13_realtime_dashboard.py` (see [Setup](#4-setup) and [How to Run](#5-how-to-run) below)
 
 <div align="center">
   <img src="docs/assets/foveax_gui_demo.gif" width="100%" alt="FOVEAX 2.5D Real-Time PyQt5 + Open3D Dashboard in Action" />
@@ -95,26 +97,27 @@ of it, not a separate measurement.
 
 | Metric | Result |
 |---|---|
-| SemanticKITTI semantic accuracy (in-domain, real SalsaNext checkpoint) | **94.98%** overall (96.03% Near / 92.96% Mid / 86.58% Far) |
-| RELLIS-3D semantic accuracy (cross-domain, off-road) | **6.65%** baseline → **22.26%** after real sensor-FOV + intensity adaptation — a real, unresolved domain-transfer gap, not a production number |
-| Memory reduction vs. uniform 3D voxel grid | **99.98%** cell reduction, **99.71%** byte reduction |
-| Real-time dashboard FPS (real RELLIS-3D data, 131,072 pts/frame) | **~13.8 FPS** (steady-state ~15.5–16.6 FPS) — below a 25–30 FPS target; see limitations |
-| Test suite | **352 passed**, 0 failures |
+| SemanticKITTI semantic accuracy (in-domain, real SalsaNext checkpoint) | **94.98%** overall (97.70% Near / 92.82% Mid / 87.28% Far) |
+| RELLIS-3D semantic accuracy (cross-domain, off-road, held-out sequence `00000`) | **6.65%** pretrained → **22.26%** with sensor-FOV + intensity adaptation → **81.53%** after fine-tuning on RELLIS-3D |
+| Memory reduction vs. uniform 3D voxel grid | **99.99%** cell reduction, **99.81%** byte reduction |
+| Real-time dashboard throughput (real RELLIS-3D data, 131,072 pts/frame) | `process_frame()` **128 ms/frame** (≈7.8 FPS) in the 2026-09-30 per-stage profile — below a 25–30 FPS target; see limitations |
+| Test suite | **505 tests** (see `docs/validation_results.md` §7 for the latest run) |
 
-The RELLIS-3D accuracy gap is a genuine, documented finding, not a bug:
-the pretrained SalsaNext checkpoint was trained on SemanticKITTI's
-Velodyne HDL-64E sensor geometry, and RELLIS-3D uses a physically
-different sensor (Ouster OS1-64, narrower vertical FOV, different
-intensity scale). Adapting the projection FOV and rescaling intensity
-more than triples accuracy but doesn't close the gap — closing it fully
-would need fine-tuning on RELLIS-3D itself.
+The RELLIS-3D progression is a real, documented finding: the pretrained
+SalsaNext checkpoint was trained on SemanticKITTI's Velodyne HDL-64E
+sensor geometry, and RELLIS-3D uses a physically different sensor
+(Ouster OS1-64, different vertical FOV and intensity scale). Adapting
+the projection FOV and rescaling intensity more than triples accuracy
+but doesn't close the gap; fine-tuning on RELLIS-3D
+(`src/14_finetune_salsanext.py`, 8-class FOVEAX head) does, at the cost
+of forgetting the urban domain (see limitations).
 
 ## 3. Adaptive Foveated Resolution — Visual Progression
 
 FOVEAX dynamically scales grid resolution across three concentric
 zones extending to 100 m (per the PS-26053 specification):
 
-| 🔭 Far Zone (35–100 m, 50 cm cells) | 🧭 Middle Zone (15–35 m, 20 cm cells) | 🎯 Near Zone (0–15 m, 5 cm cells) |
+| 🔭 Far Zone (30–100 m, 50 cm cells) | 🧭 Middle Zone (10–30 m, 20 cm cells) | 🎯 Near Zone (0–10 m, 5 cm cells) |
 | :---: | :---: | :---: |
 | <img src="docs/assets/adaptive_far_zone_50cm.png" width="260"> | <img src="docs/assets/adaptive_mid_zone_20cm.png" width="260"> | <img src="docs/assets/adaptive_near_zone_5cm.png" width="260"> |
 | Macro-awareness & route guidance | Corridor selection | Full geometric resolution & step hazards |
@@ -126,7 +129,7 @@ zones extending to 100 m (per the PS-26053 specification):
 
 Why this works: at long range, LiDAR beam divergence spreads returns
 too thin for fine cells to hold any real signal, so a coarse 50 cm grid
-aggregates them into usable occupancy while cutting memory by >99.7%
+aggregates them into usable occupancy while cutting memory by >99.8%
 versus a uniform 5 cm 3D voxel grid over the same volume. Near the
 vehicle, where reactive collision decisions happen, the full 5 cm
 resolution is preserved.
@@ -255,6 +258,17 @@ python src/10b_eval_distance_metrics.py --dataset-type rellis3d --sequence 00000
     --config models/salsanext/pretrained/pretrained/arch_cfg.yaml \
     --device auto
 
+# --- Fine-tune SalsaNext on RELLIS-3D (8-class FOVEAX head; ~100 min on an RTX 5050) ---
+python src/14_finetune_salsanext.py          # writes models/salsanext/rellis3d_finetuned/
+
+# Score the fine-tuned checkpoint on the held-out sequence 00000:
+python src/10b_eval_distance_metrics.py --dataset-type rellis3d --sequence 00000 --frame 000000 \
+    --taxonomy foveax --num-frames 100 --frame-stride 20 \
+    --salsanext-repo external/SalsaNext \
+    --checkpoint models/salsanext/rellis3d_finetuned/best.pt \
+    --config models/salsanext/rellis3d_finetuned/arch_cfg.yaml \
+    --device auto
+
 # --- 3D object detection & tracking ---
 python src/11_object_detection_tracking.py --source sample --detector mock --frames 10
 python src/11_object_detection_tracking.py --source semantickitti --sequence 00 --start-frame 000000 --frames 5
@@ -267,6 +281,9 @@ python src/13_realtime_dashboard.py --source rellis3d --sequence 00002 --frames 
 # Headless replay (no GUI, writes telemetry JSONL) — useful for CI/benchmarking:
 python src/13_realtime_dashboard.py --source semantickitti --frames 10 --headless
 python src/13_realtime_dashboard.py --source rellis3d --frames 10 --headless
+
+# Per-stage timing of the real pipeline (mean/p50/p95 per stage + 1 Hz nvidia-smi log):
+python src/13_realtime_dashboard.py --profile --profile-frames 200 --source rellis3d --sequence 00001
 
 # Compare a real model prediction against real ground truth live in the dashboard:
 python src/13_realtime_dashboard.py --source semantickitti --predictor salsanext \
@@ -295,7 +312,7 @@ hazard table, live accuracy vs. ground truth, hardware telemetry).
 
 ## 6. Known Limitations
 
-Pulled directly from [`docs/validation_results.md` §6](docs/validation_results.md#6-known-limitations):
+Summarized from [`docs/validation_results.md` §5–§6](docs/validation_results.md#6-known-limitations):
 
 1. **No ego-motion compensation.** This pipeline has no odometry/SLAM.
    Over a long real playback, genuine vehicle motion makes static real
@@ -304,15 +321,18 @@ Pulled directly from [`docs/validation_results.md` §6](docs/validation_results.
    be flagged "Dynamic") but not solved for genuinely mobile classes
    (VEHICLE/PEDESTRIAN velocity readings may still be partially
    contaminated by uncompensated ego motion).
-2. **RELLIS-3D cross-domain semantic accuracy is low (22.26% overall,
-   even after sensor adaptation).** A real, unresolved domain-transfer
-   failure, not a production-ready result — see §2 above.
-3. **Dashboard FPS (13.8, real) is below typical 25–30 FPS real-time
-   targets.** Two rounds of profiling-driven vectorization improved
-   this ~3.3x from an original 4.2 FPS; the next real bottleneck
-   (identified via profiling, not yet fixed) is
-   `scipy.sparse.csgraph.connected_components`'s internal CSR
-   conversion overhead (~14 ms/frame).
+2. **The fine-tuned RELLIS-3D checkpoint forgets the urban domain**
+   (SemanticKITTI 94.98% → 23.97%, FOVEAX-space). Use
+   `models/salsanext/pretrained/` for urban scenes and
+   `models/salsanext/rellis3d_finetuned/` for off-road scenes. The live
+   dashboard's `--predictor salsanext` currently loads only the
+   pretrained (20-class) checkpoint — it has no `--taxonomy` option yet.
+3. **Dashboard throughput is below typical 25–30 FPS real-time
+   targets.** `process_frame()` averages 128 ms (≈7.8 FPS) in the
+   per-stage profile, with detection/clustering the largest stage
+   (84 ms). The dashboard's on-screen FPS label shows the
+   configured playback rate, not measured throughput — use `--profile`
+   for real numbers.
 4. **`MockObjectDetector` is a deterministic geometric baseline, not a
    trained AI detector** — it clusters points above a ground-height
    threshold; it does not perform learned object recognition. Real
@@ -339,6 +359,11 @@ FOVEAX_2.5D_TRAIL/
 │   ├── 12_env_inspector.py               Environment/GPU/CUDA diagnostic report
 │   ├── 13_optimize_and_deploy.py         Phase 11 ONNX/TensorRT profiling & export
 │   ├── 13_realtime_dashboard.py          Real-time PyQt5 + Open3D dashboard entry point
+│   ├── 14_finetune_salsanext.py          Fine-tune SalsaNext on RELLIS-3D (FOVEAX 8-class head)
+│   ├── prepare_rellis3d_for_salsanext_training.py  RELLIS-3D → upstream SalsaNext layout
+│   │
+│   ├── training/
+│   │   └── rellis3d_dataset.py           Train/val/test splits + range-image samples for fine-tuning
 │   │
 │   ├── perception/                       Detection, semantic & terrain perception modules
 │   │   ├── object_detector.py            MockObjectDetector (geometric clustering)
@@ -351,6 +376,7 @@ FOVEAX_2.5D_TRAIL/
 │   │   ├── overhead_detection.py         Overhead-clearance vs. solid-obstacle classification
 │   │   ├── centerline_profile.py         Forward-corridor elevation cross-section
 │   │   ├── ego_motion_estimate.py        Informational real ICP ego-displacement estimate
+│   │   ├── terrain_features.py           Per-object slope/clearance/overhang + pothole/bump kind
 │   │   └── grid_overlay.py               Traversability colormap/overlay rendering
 │   │
 │   ├── tracking/
@@ -362,13 +388,15 @@ FOVEAX_2.5D_TRAIL/
 │   │   ├── dashboard_state.py            FrameState/HardwareMetrics dataclasses
 │   │   ├── open3d_viewer.py              Embedded Open3D 3D view (separate process)
 │   │   ├── win32_embed.py                Windows window-reparenting helpers
+│   │   ├── track_labels.py               3D box class labels drawn as Qt widgets over Open3D
+│   │   ├── stage_timer.py                Per-stage timing harness behind --profile
 │   │   ├── export_web_dashboard_data.py  Real-data JSON export bridge (web dashboard)
 │   │   └── export_dashboard_snapshots.py Static publication-quality PNG snapshots
 │   │
 │   ├── deployment/                       Phase 11: ONNX export, TensorRT, VRAM budgeting
 │   └── integrations/                     Phase 10: ROS 2 PointCloud2/TF adapters (requires ROS 2)
 │
-├── tests/                                352 tests, pytest
+├── tests/                                505 tests, pytest
 ├── docs/                                 Setup guides, validation results, phase docs
 ├── outputs/                              Generated results (grids, plots, dashboard exports)
 ├── requirements.txt / pyproject.toml     Pinned real dependencies (see comments for GPU note)
