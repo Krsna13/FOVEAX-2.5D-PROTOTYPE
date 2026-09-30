@@ -1,3 +1,17 @@
+## 🖥️ See the working GUI in 3 steps (Windows)
+
+No Python, no install, no dataset download needed.
+
+1. **Download** [`FOVEAX-windows.zip`](https://github.com/Krsna13/FOVEAX-2.5D-PROTOTYPE/releases/latest) from the **Releases** page (Assets section, about 340 MB).
+2. **Unzip** it, open the folder, and double-click **`FOVEAX.exe`**.
+   If Windows shows a blue SmartScreen box, click **More info**, then **Run anyway**.
+3. **Wait a few seconds.** The window opens maximized and starts playing real RELLIS-3D LiDAR frames on its own.
+
+Tip: click **PAUSE**, then use **STEP >>** to go frame by frame, and try the **TRAVERSABILITY** and **OVERHEAD** map layers on the left. **RESTART** replays the sample.
+The download is a demo build: 100 real frames, ground-truth labels, Windows only. To run the full version from source, see [Setup](#4-setup).
+
+---
+
 <img width="1908" height="175" alt="DEPTH AND HEIGHT" src="https://github.com/user-attachments/assets/a2fb0f08-05d6-40ae-8f90-9339815bfeaf" />
 <img width="1917" height="1120" alt="DRIVABLE REGION" src="https://github.com/user-attachments/assets/bc206e66-c639-48a4-afad-784f4265ddaf" />
 <img width="390" height="51" alt="NEARBY OBJECT ALERT" src="https://github.com/user-attachments/assets/98774e0e-e197-4af8-8a17-91427c20b468" />
@@ -35,6 +49,35 @@ a live PyQt5 + Open3D dashboard.
 | NON-DRIVABLE CAUTION AREA | OBJECT DETECTION | NEARBY OBJECT ALERT | DRIVABLE REGION |
 | :---: | :---: | :---: | :---: |
 | <img src="docs/assets/NON-DRIVABLE%20CAUTION%20AREA.png" alt="NON-DRIVABLE CAUTION AREA" width="100%" /> | <img src="docs/assets/OBJECT%20DETECTION.png" alt="OBJECT DETECTION" width="100%" /> | <img src="docs/assets/NEARBY%20OBJECT%20ALERT.png" alt="NEARBY OBJECT ALERT" width="100%" /> | <img src="docs/assets/DRIVABLE%20REGION.png" alt="DRIVABLE REGION" width="100%" /> |
+
+### Live Telemetry & Inspector Panels
+
+The dashboard provides real-time multi-panel telemetry during LiDAR streaming:
+
+| 1. TERRAIN — Elevation & Hazards | 2. TERRAIN — Clusters & Uncertainty | 3. SYSTEM — Hardware & Accuracy | 4. STATUS — Ego & Object Tracking |
+| :---: | :---: | :---: | :---: |
+| <img src="docs/assets/dashboard_terrain_elevation.png" alt="Road Width & Elevation Profile" width="100%" /> | <img src="docs/assets/dashboard_terrain_hazards.png" alt="Map Uncertainty & Hazard Clusters" width="100%" /> | <img src="docs/assets/dashboard_system_metrics.png" alt="System Hardware & Metrics" width="100%" /> | <img src="docs/assets/dashboard_status_tracking.png" alt="Ego Status & Multi-Object Tracking" width="100%" /> |
+
+#### Panel Explanations
+
+1. **TERRAIN (Elevation Profile & Road Width)**:
+   - **ROAD WIDTH (`1.00 m`)**: Contiguous lateral clear corridor where traversability is Safe ($\ge 0.70$). Helps the vehicle determine whether the path ahead is wide enough for traversal.
+   - **ELEVATION PROFILE**: Real-time cross-section along the vehicle forward centerline ($-13\text{ m}$ to $+17\text{ m}$). The cyan line displays surface height, and **red markers** identify acute step heights, steep slopes, or impassable obstacles exceeding safety thresholds.
+
+2. **TERRAIN (Map Uncertainty & Hazard Clusters)**:
+   - **MAP UNCERTAINTY**: Derived from the Phase 5 density log-confidence formula ($\text{uncertainty} = 1.0 - \text{clip}(\ln(1 + N)/\ln 8, 0, 1)$), measuring mean scene uncertainty ($71.5\%$) and occupied grid coverage ($43.7\%$).
+   - **HAZARD CLUSTERS**: Real-time connected components of blocked cells ($< 0.40$ traversability). Reports distance from ego, minimum traversability score, severity (**Critical** $< 0.20$ vs **Caution** $0.20\text{--}0.40$), confidence, topological classification (**Pothole** depression vs **Bump** step obstacle), and height/depth in meters.
+
+3. **SYSTEM (Hardware, Metrics & Accuracy)**:
+   - **HARDWARE**: Live frame processing rate ($30.0\text{ FPS}$), end-to-end perception latency ($86.6\text{ ms}$), CPU load ($27.9\%$), and system RAM usage ($70.3\%$).
+   - **ACCURACY**: Real-time per-frame accuracy segmented across the 3 foveated distance rings: Near ($0\text{--}10\text{ m}$, $55{,}896$ points), Mid ($10\text{--}30\text{ m}$, $15{,}082$ points), and Far ($30\text{--}100\text{ m}$, $751$ points).
+   - **EFFICIENCY**: Structural memory savings of the 2.5D adaptive foveated representation over uniform 3D voxels ($99.99\%$ fewer cells, $99.81\%$ memory/byte savings).
+   - **EGO MOTION**: Point-cloud registration (ICP) estimated relative vehicle displacement between consecutive frames ($0.090\text{ m}$).
+
+4. **STATUS (Ego Assessment & Multi-Object Tracking)**:
+   - **EGO TERRAIN STATUS**: Immediate drivability assessment beneath/ahead of the vehicle (**DRIVABLE**, average traversability $0.77 \ge 0.70$).
+   - **TRACKED OBJECTS**: Multi-object Kalman tracker tracking 3D bounding boxes. Displays object ID, semantic class (`VEGETATION`, `PEDESTRIAN`, `Overhang`), motion state (`Static` vs `Dynamic`), estimated speed (e.g. $2.2\text{ m/s}$), and radial distance ($6.2\text{ m}$).
+   - **NEAREST DYNAMIC OBJECT**: Focused proximity alert for the closest moving object (ID 8 Pedestrian, $6.2\text{ m}$ away at $2.2\text{ m/s}$).
 
 ---
 
